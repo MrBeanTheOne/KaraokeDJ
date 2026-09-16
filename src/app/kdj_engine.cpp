@@ -502,8 +502,8 @@ void engineTick(App& a) {
         const int bpm = a.wave[d].bpm();
         if (bpm <= 0 || a.label[d].empty() || !a.deckMatch[d].id) continue;
         if (a.deckMatch[d].bpm > 0) continue; // already known (tag or earlier)
-        Db::Stmt q;
-        a.db.prepare(q, "UPDATE media_item SET bpm=?2 WHERE id=?1 AND bpm=0");
+        Db::Stmt q; // bpm<=0 lets the full-track scan refine an analyzer miss
+        a.db.prepare(q, "UPDATE media_item SET bpm=?2 WHERE id=?1 AND bpm<=0");
         q.bind(1, a.deckMatch[d].id).bind(2, int64_t(bpm));
         q.step();
         a.deckMatch[d].bpm = bpm; // don't re-write every tick

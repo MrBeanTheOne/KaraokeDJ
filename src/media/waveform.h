@@ -3,6 +3,11 @@
 #include <string>
 #include <thread>
 
+// One-shot BPM detection for the background library analyzer: decodes a
+// ~100 s segment from a quarter of the way in (the caller's thread must have
+// COM initialized). Returns 0 when the tempo can't be pinned down.
+int analyzeBpm(const std::wstring& path);
+
 // Decodes a whole track on a background thread into kBins peak values for the
 // deck waveform strip. Bins become valid left-to-right while scanning; the UI
 // polls readyBins() and just draws what exists.

@@ -204,6 +204,15 @@ struct App {
     std::atomic<bool> pickDone{false};
     std::wstring pickResult;
 
+    // Background BPM analysis: fills media_item.bpm for rows the import's
+    // tag read couldn't (most karaoke files carry no BPM tag). Runs at OS
+    // background priority on its own db connection; restarted after imports.
+    std::thread bpmThread;
+    std::atomic<bool> bpmStop{false};
+    std::atomic<bool> bpmBusy{false};
+    std::atomic<bool> bpmFinished{false};
+    std::atomic<int> bpmDone{0}, bpmTotal{0};
+
     // Video outputs
     std::unique_ptr<VideoWindow> fullOut;
     int outMonitor = -1;
@@ -317,6 +326,7 @@ Match matchFromPath(App& a, const std::wstring& path);
 std::wstring snapshotBlob(App& a);
 void restoreSnapshot(App& a);
 void startImport(App& a, const std::wstring& folder);
+void startBpmAnalysis(App& a);
 std::wstring pickFolder(HWND owner);
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
 std::wstring youtubeCacheDir();

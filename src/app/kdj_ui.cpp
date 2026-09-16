@@ -1052,9 +1052,13 @@ void drawUi(App& a, Ui& ui, float W, float H) {
     }
     if (ui.in.pressed) a.focus = Focus::None; // boxes re-claim when hit
     ui.text(rc(16, 8, 300, 32), L"KARAOKE DJ", 20, cAccent, 0, true);
-    wchar_t perf[48];
-    swprintf(perf, 48, L"CPU %.1f%%   RAM %d MB", a.cpuPct, a.ramMb);
-    ui.text(rc(16, 40, 300, 14), perf, 10, cDim, 0, false);
+    wchar_t perf[96];
+    if (a.bpmBusy.load() && a.bpmTotal.load() > 0)
+        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB   ANALYZING BPM %d / %d",
+                 a.cpuPct, a.ramMb, a.bpmDone.load(), a.bpmTotal.load());
+    else
+        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB", a.cpuPct, a.ramMb);
+    ui.text(rc(16, 40, 420, 14), perf, 10, cDim, 0, false);
     ui.text(rc(16, 8, W - 32, 32), a.status, 12, cDim, 2, false);
 
     std::wstring vlabel = a.outMonitor < 0

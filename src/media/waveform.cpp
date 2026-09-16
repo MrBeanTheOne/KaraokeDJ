@@ -10,6 +10,67 @@
 
 #include "media/mf_decoder.h"
 
+// BPM from an onset-energy envelope sampled at 93.75 Hz (48 kHz / 512-frame
+// hops): mean-removed autocorrelation over 60-180 BPM lags, mild preference
+// for 80-160. Needs ~19 s of material (1800 hops) to answer at all.
+static int bpmFromOnset(std::vector<float>& onset) {
+    if (onset.size() < 1800) return 0;
+    double mean = 0.0;
+    for (float v : onset) mean += v;
+    mean /= double(onset.size());
+    for (float& v : onset) v -= float(mean);
+    const double hopHz = 48000.0 / 512.0;
+    double best = 0.0;
+    int bestLag = 0;
+    const int loLag = int(hopHz * 60.0 / 180.0); // ~31
+    const int hiLag = int(hopHz * 60.0 / 60.0);  // ~94
+    for (int lag = loLag; lag <= hiLag; ++lag) {
+        double c = 0.0;
+        const size_t n = onset.size() - lag;
+        for (size_t i = 0; i < n; i += 2) // stride 2: plenty
+            c += double(onset[i]) * onset[i + lag];
+        const double b = hopHz * 60.0 / lag;
+        const double pref = (b >= 80.0 && b <= 160.0) ? 1.0 : 0.85;
+        c *= pref / double(n);
+        if (c > best) { best = c; bestLag = lag; }
+    }
+    return bestLag > 0 ? int(hopHz * 60.0 / bestLag + 0.5) : 0;
+}
+
+int analyzeBpm(const std::wstring& path) {
+    MFDecoder dec;
+    if (!dec.open(path, 48000, 2)) return 0;
+    // A middle segment hears enough beats; decoding the whole file would
+    // triple the analysis time for nothing.
+    const uint64_t total = dec.durationFrames(48000);
+    if (total > 48000ull * 130)
+        dec.seekTo(int64_t(total / 4 / 48000) * 10000000ll);
+    std::vector<float> chunk, onset;
+    const size_t maxHops = 48000ull * 100 / 512;
+    onset.reserve(maxHops + 8);
+    double hopE = 0.0;
+    float prevE = 0.f;
+    uint32_t hopN = 0;
+    while (onset.size() < maxHops) {
+        chunk.clear();
+        if (!dec.readChunk(chunk)) break;
+        for (size_t i = 0; i + 1 < chunk.size(); i += 2) {
+            float v = std::fabs(chunk[i]);
+            const float v2 = std::fabs(chunk[i + 1]);
+            if (v2 > v) v = v2;
+            hopE += double(v) * v;
+            if (++hopN == 512) {
+                const float e = float(hopE / 512.0);
+                onset.push_back((std::max)(0.f, e - prevE));
+                prevE = e;
+                hopE = 0.0;
+                hopN = 0;
+            }
+        }
+    }
+    return bpmFromOnset(onset);
+}
+
 void WaveformScanner::cancel() {
     cancel_.store(true);
     if (th_.joinable()) th_.join();
@@ -87,33 +148,9 @@ void WaveformScanner::start(const std::wstring& path) {
                         for (int i = 0; i < top; ++i) sum += rms[i];
                         loud_.store(float(sum / top), std::memory_order_release);
                     }
-                    // BPM: autocorrelate the onset envelope over 60-180 BPM
-                    // lags (hop rate 93.75 Hz), mild preference for 80-160.
-                    if (onset.size() > 1800 &&
-                        !cancel_.load(std::memory_order_relaxed)) {
-                        double mean = 0.0;
-                        for (float v : onset) mean += v;
-                        mean /= double(onset.size());
-                        for (float& v : onset) v -= float(mean);
-                        const double hopHz = 48000.0 / 512.0;
-                        double best = 0.0;
-                        int bestLag = 0;
-                        const int loLag = int(hopHz * 60.0 / 180.0);  // ~31
-                        const int hiLag = int(hopHz * 60.0 / 60.0);   // ~94
-                        for (int lag = loLag; lag <= hiLag; ++lag) {
-                            double c = 0.0;
-                            const size_t n = onset.size() - lag;
-                            for (size_t i = 0; i < n; i += 2) // stride 2: plenty
-                                c += double(onset[i]) * onset[i + lag];
-                            const double b = hopHz * 60.0 / lag;
-                            const double pref =
-                                (b >= 80.0 && b <= 160.0) ? 1.0 : 0.85;
-                            c *= pref / double(n);
-                            if (c > best) { best = c; bestLag = lag; }
-                        }
-                        if (bestLag > 0)
-                            bpm_.store(int(hopHz * 60.0 / bestLag + 0.5),
-                                       std::memory_order_release);
+                    if (!cancel_.load(std::memory_order_relaxed)) {
+                        const int b = bpmFromOnset(onset);
+                        if (b > 0) bpm_.store(b, std::memory_order_release);
                     }
                 }
             }

@@ -365,8 +365,59 @@ void restoreSnapshot(App& a) {
 
 // ------------------------------------------------------------------- import
 
+// Walks every library row with unknown BPM and detects it from the audio.
+// Undetectable files are marked -1 (shown blank) so launches don't re-chew
+// them; the deck's full-track scan still refines those on first play.
+void startBpmAnalysis(App& a) {
+    if (a.scanning.load()) return; // the import-finished handler restarts us
+    a.bpmStop.store(true);
+    if (a.bpmThread.joinable()) a.bpmThread.join();
+    a.bpmStop.store(false);
+    a.bpmDone.store(0);
+    a.bpmTotal.store(0);
+    const std::wstring dbPath = a.dbPath;
+    a.bpmBusy.store(true);
+    a.bpmThread = std::thread([&a, dbPath]() {
+        // ponytail: OS background mode throttles CPU/IO scheduling; if decode
+        // ever audibly competes with playback on the gig laptop, add an
+        // "either deck live -> sleep" gate here.
+        SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        {
+            Db db;
+            if (db.open(dbPath)) {
+            struct Row { int64_t id; std::wstring path; };
+            std::vector<Row> rows;
+            {
+                Db::Stmt q; // zips would need extraction first; the deck
+                            // scan covers those on first play
+                db.prepare(q, "SELECT id, path FROM media_item WHERE bpm=0 "
+                              "AND type IN ('audio','mp3g','video')");
+                while (q.step())
+                    rows.push_back({q.colInt(0), wide(q.colText(1))});
+            }
+            a.bpmTotal.store(int(rows.size()));
+            for (const Row& r : rows) {
+                if (a.bpmStop.load()) break;
+                const int bpm = analyzeBpm(r.path);
+                Db::Stmt u;
+                db.prepare(u,
+                           "UPDATE media_item SET bpm=?2 WHERE id=?1 AND bpm=0");
+                u.bind(1, r.id).bind(2, int64_t(bpm > 0 ? bpm : -1));
+                u.step();
+                a.bpmDone.fetch_add(1);
+            }
+            }
+        }
+        CoUninitialize();
+        a.bpmBusy.store(false);
+        if (a.bpmTotal.load() > 0) a.bpmFinished.store(true);
+    });
+}
+
 void startImport(App& a, const std::wstring& folder) {
     if (a.scanning.load() || folder.empty()) return;
+    a.bpmStop.store(true); // the import owns the disk; analysis resumes after
     if (a.scanThread.joinable()) a.scanThread.join();
     a.scanning.store(true);
     a.status = L"importing: " + folder;

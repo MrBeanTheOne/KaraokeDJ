@@ -286,6 +286,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     const bool crashed = getSetting(a.db, "snap_clean", "1") == "0";
     setSetting(a.db, "snap_clean", "0"); // this session is now in progress
     if (crashed) restoreSnapshot(a);
+    startBpmAnalysis(a); // fill in BPMs the last session didn't get to
 
     auto lastDraw = Clock::now();
     while (!g_closed) {
@@ -374,6 +375,19 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.scanFinished.exchange(false)) {
             a.navDirty = a.searchDirty = true;
             a.status = L"import complete";
+            startBpmAnalysis(a); // detect BPM for whatever just came in
+        }
+        if (a.bpmBusy.load()) { // refresh the BPM column as results land
+            static int bpmShown = 0;
+            const int d = a.bpmDone.load();
+            if (d - bpmShown >= 20 || d < bpmShown) {
+                bpmShown = d;
+                a.searchDirty = true;
+            }
+        }
+        if (a.bpmFinished.exchange(false)) {
+            a.searchDirty = true;
+            a.status = L"BPM analysis complete";
         }
         if (a.ytDone.exchange(false)) {
             if (a.ytThread.joinable()) a.ytThread.join();
@@ -506,6 +520,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     if (a.pickThread.joinable()) a.pickThread.join();
     a.scanProg.cancel.store(true); // closing cancels a running import promptly;
     if (a.scanThread.joinable()) a.scanThread.join(); // committed rows survive
+    a.bpmStop.store(true); // finished BPMs are already committed row-by-row
+    if (a.bpmThread.joinable()) a.bpmThread.join();
     if (a.ytThread.joinable()) a.ytThread.join();
     a.fullOut.reset();
     a.out.stop();
