@@ -21,6 +21,8 @@ Grab **`KaraokeDJ-<version>-win64.exe`** from the
 and run it. The installer is fully self-contained — yt-dlp and ffmpeg are
 bundled, no runtimes to install — and cleanly replaces any older version.
 Your library lives in `%APPDATA%\KaraokeDJ\` and survives every upgrade.
+The app checks GitHub for newer releases on launch (and on demand in
+Settings) and points you at the download when one exists.
 
 ## ✨ What it does
 

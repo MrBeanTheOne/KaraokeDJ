@@ -278,6 +278,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     }
     a.web.setPassword(a.webPass); // set before listen: no unprotected window
     if (a.webOn && !a.web.start(a.dbPath)) a.webOn = false; // opt-in feature
+    startUpdateCheck(a, false); // silent: only speaks up when newer exists
 
     Ui ui;
     if (!ui.init(hwnd)) return 1;
@@ -420,6 +421,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.bpmFinished.exchange(false)) {
             a.searchDirty = true;
             a.status = L"BPM analysis complete";
+        }
+        if (a.updDone.exchange(false)) {
+            if (a.updThread.joinable()) a.updThread.join();
+            if (!a.updLatest.empty())
+                a.status = L"update available: v" + a.updLatest +
+                           L"  — get it in Settings";
+            else if (a.updManual)
+                a.status = a.updError.empty() ? L"you're on the latest version"
+                                              : L"update check: " + a.updError;
         }
         if (a.web.hasPending()) { // phone requests → DJ inbox + status blip
             for (auto& r : a.web.take()) a.reqInbox.push_back(std::move(r));
@@ -567,6 +577,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     if (a.scanThread.joinable()) a.scanThread.join(); // committed rows survive
     a.bpmStop.store(true); // finished BPMs are already committed row-by-row
     if (a.bpmThread.joinable()) a.bpmThread.join();
+    if (a.updThread.joinable()) a.updThread.join();
     a.web.stop();
     if (a.ytThread.joinable()) a.ytThread.join();
     a.fullOut.reset();

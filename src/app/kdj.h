@@ -43,6 +43,14 @@
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
+// Build version (CMake define; wide variant for UI literals).
+#ifndef KDJ_VERSION
+#define KDJ_VERSION "0.0.0"
+#endif
+#define KDJ_W_(x) L##x
+#define KDJ_W(x) KDJ_W_(x)
+#define KDJ_VERSION_W KDJ_W(KDJ_VERSION)
+
 static constexpr uint32_t kRate = 48000;
 static constexpr uint32_t kCh = 2;
 
@@ -276,6 +284,15 @@ struct App {
     std::wstring webPass;      // optional page password (web_pass)
     std::vector<PhoneRequest> reqInbox; // pending, shown in the REQUESTS modal
 
+    // Update check: GitHub latest release vs this build (silent at startup,
+    // manual button in settings). Thread only reads; UI reads after updDone.
+    std::thread updThread;
+    std::atomic<bool> updBusy{false};
+    std::atomic<bool> updDone{false};
+    std::wstring updLatest; // newer version ("1.2.0") or "" when current
+    std::wstring updError;  // "" on success
+    bool updManual = false;
+
     // YouTube download (yt-dlp.exe beside the app or on PATH)
     std::thread ytThread;
     std::atomic<bool> ytBusy{false}, ytDone{false};
@@ -359,6 +376,7 @@ std::wstring snapshotBlob(App& a);
 void restoreSnapshot(App& a);
 void startImport(App& a, const std::wstring& folder);
 void startBpmAnalysis(App& a);
+void startUpdateCheck(App& a, bool manual);
 std::wstring pickFolder(HWND owner);
 std::wstring pickFile(HWND owner); // image picker (waiting-screen logo)
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);

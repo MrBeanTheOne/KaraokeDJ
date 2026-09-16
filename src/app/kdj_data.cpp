@@ -1,5 +1,7 @@
 #include "app/kdj.h"
 
+#include <winhttp.h>
+
 // -------------------------------------------------------------- settings
 
 std::string getSetting(Db& db, const char* key, const std::string& def) {
@@ -430,6 +432,77 @@ void restoreSnapshot(App& a) {
     if (tracks)
         a.status = L"crash recovery: session restored (" +
                    std::to_wstring(tracks) + L" tracks)";
+}
+
+// ------------------------------------------------------------- update check
+
+static std::string httpsGet(const wchar_t* host, const wchar_t* path) {
+    std::string out;
+    HINTERNET ses = WinHttpOpen(L"KaraokeDJ", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!ses) return out;
+    if (HINTERNET con = WinHttpConnect(ses, host, INTERNET_DEFAULT_HTTPS_PORT, 0)) {
+        if (HINTERNET req = WinHttpOpenRequest(con, L"GET", path, nullptr,
+                                               WINHTTP_NO_REFERER,
+                                               WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                               WINHTTP_FLAG_SECURE)) {
+            if (WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                   WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+                WinHttpReceiveResponse(req, nullptr)) {
+                DWORD n = 0;
+                do {
+                    char buf[4096];
+                    n = 0;
+                    if (!WinHttpReadData(req, buf, sizeof(buf), &n)) break;
+                    out.append(buf, n);
+                } while (n > 0 && out.size() < 1 << 20);
+            }
+            WinHttpCloseHandle(req);
+        }
+        WinHttpCloseHandle(con);
+    }
+    WinHttpCloseHandle(ses);
+    return out;
+}
+
+// "1.2.10" -> {1,2,10}; missing parts are 0.
+static void parseVer(const char* s, int v[3]) {
+    v[0] = v[1] = v[2] = 0;
+    sscanf_s(s, "%d.%d.%d", &v[0], &v[1], &v[2]);
+}
+
+void startUpdateCheck(App& a, bool manual) {
+    if (a.updBusy.load()) return;
+    if (a.updThread.joinable()) a.updThread.join();
+    a.updBusy.store(true);
+    a.updManual = manual;
+    a.updThread = std::thread([&a]() {
+        const std::string body = httpsGet(
+            L"api.github.com", L"/repos/MrBeanTheOne/KaraokeDJ/releases/latest");
+        std::wstring latest;
+        std::wstring err = L"couldn't reach GitHub";
+        const size_t k = body.find("\"tag_name\":\"");
+        if (k != std::string::npos) {
+            size_t b = k + 12;
+            if (b < body.size() && body[b] == 'v') ++b;
+            const size_t e = body.find('\"', b);
+            if (e != std::string::npos && e - b < 24) {
+                const std::string tag = body.substr(b, e - b);
+                int cur[3], rel[3];
+                parseVer(KDJ_VERSION, cur);
+                parseVer(tag.c_str(), rel);
+                const bool newer = rel[0] != cur[0]   ? rel[0] > cur[0]
+                                   : rel[1] != cur[1] ? rel[1] > cur[1]
+                                                      : rel[2] > cur[2];
+                if (newer) latest = wide(tag);
+                err.clear();
+            }
+        }
+        a.updLatest = std::move(latest); // written before updDone is set
+        a.updError = std::move(err);
+        a.updBusy.store(false);
+        a.updDone.store(true);
+    });
 }
 
 // ------------------------------------------------------------------- import

@@ -524,6 +524,25 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
     }
     ui.text(rc(x + 310, y, w - 310, 28),
             L"trims every track toward the same loudness", 10, cDim, 0, false);
+    y += 40;
+    if (!a.updLatest.empty()) { // newer release on GitHub
+        if (ui.button(604, rc(x, y, 300, 28),
+                      L"GET UPDATE  v" + a.updLatest, cGreen, true))
+            ShellExecuteW(nullptr, L"open",
+                          L"https://github.com/MrBeanTheOne/KaraokeDJ/"
+                          L"releases/latest",
+                          nullptr, nullptr, SW_SHOWNORMAL);
+        ui.text(rc(x + 310, y, w - 310, 28),
+                L"opens the download page — this is v" KDJ_VERSION_W, 10,
+                cDim, 0, false);
+    } else {
+        if (ui.button(604, rc(x, y, 300, 28), L"CHECK FOR UPDATES", cDim))
+            startUpdateCheck(a, true);
+        ui.text(rc(x + 310, y, w - 310, 28),
+                a.updBusy.load() ? L"checking…"
+                                 : L"this is v" KDJ_VERSION_W, 10, cDim, 0,
+                false);
+    }
     y += 44;
 
     ui.text(rc(x, y, w, 16), L"VIDEO OUTPUT", 11, cDim, 0, true);

@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(karaoke-dj VERSION 1.1.2 LANGUAGES C CXX)
+project(karaoke-dj VERSION 1.1.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -74,8 +74,9 @@ add_executable(karaoke_dj WIN32
   src/web/request_server.cpp
   external/qrcodegen/qrcodegen.cpp)
 target_include_directories(karaoke_dj PRIVATE src external/httplib external/qrcodegen)
+target_compile_definitions(karaoke_dj PRIVATE KDJ_VERSION="${PROJECT_VERSION}")
 target_link_libraries(karaoke_dj PRIVATE sqlite3 miniz normaliz psapi mfplat mfreadwrite mfuuid ole32 avrt d3d11
-  d2d1 dwrite shell32 propsys ws2_32 iphlpapi windowscodecs)
+  d2d1 dwrite shell32 propsys ws2_32 iphlpapi windowscodecs winhttp)
 
 add_executable(test_core tests/unit/test_core.cpp src/karaoke/cdg_renderer.cpp)
 target_include_directories(test_core PRIVATE src)
