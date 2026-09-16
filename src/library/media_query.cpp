@@ -5,10 +5,11 @@
 std::vector<Match> searchMedia(Db& db, const std::wstring& term, int limit,
                                const std::wstring& pathPrefix, int sortCol,
                                bool sortAsc) {
-    static const char* kCols[] = {"artist", "title", "genre", "year"};
-    if (sortCol < 0 || sortCol > 3) sortCol = 0;
+    static const char* kCols[] = {"artist", "title", "genre",
+                                  "year",   "bpm",   "duration_ms"};
+    if (sortCol < 0 || sortCol > 5) sortCol = 0;
     std::string sql = // fold() = case- and accent-insensitive ("eglise" finds "Église")
-        "SELECT id,artist,title,path,type,duration_ms,genre,year FROM media_item "
+        "SELECT id,artist,title,path,type,duration_ms,genre,year,bpm FROM media_item "
         "WHERE (fold(title) LIKE ?1 OR fold(artist) LIKE ?1 OR fold(path) LIKE ?1) "
         "AND type IN ('audio','mp3g','video','karaoke_zip') AND path LIKE ?3 ORDER BY ";
     sql += kCols[sortCol];
@@ -32,6 +33,7 @@ std::vector<Match> searchMedia(Db& db, const std::wstring& term, int limit,
         m.durMs = q.colInt(5);
         m.genre = wide(q.colText(6));
         m.year = q.colInt(7);
+        m.bpm = q.colInt(8);
         out.push_back(std::move(m));
     }
     return out;

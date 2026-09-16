@@ -435,7 +435,7 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
                 a.navPlaylist = row.plId;
                 a.navPlaylistName = row.mode == NavMode::Playlist ? row.text : L"";
                 a.navFolder = row.mode == NavMode::Folder ? row.folder + L"\\" : L"";
-                a.focus = row.mode == NavMode::Singers ? Focus::SingerName : Focus::Search;
+                a.focus = Focus::None;
                 a.searchDirty = true;
             }
         }
@@ -498,6 +498,9 @@ void performCleanMissing(App& a) {
     a.status = L"removed " + std::to_wstring(gone.size()) + L" missing entries";
 }
 
+// Text-box caret blink (only while a box is focused).
+static bool caretOn() { return (GetTickCount64() / 530) & 1; }
+
 void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
     const float x = r.left + 20;
     const float w = (std::min)(620.f, r.right - r.left - 40);
@@ -510,8 +513,8 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
     ui.rect(box, cInset, 7);
     ui.frameRect(box, a.setFocusTitle ? cAccent : cBorder, 5);
     ui.text(rc(box.left + 8, box.top, box.right - box.left - 12, 26),
-            a.idleTitle + (a.setFocusTitle ? L"▏" : L""), 12, cText, 0,
-            false);
+            a.idleTitle + (a.setFocusTitle && caretOn() ? L"▏" : L""), 12,
+            cText, 0, false);
     if (ui.in.pressed)
         a.setFocusTitle = hit(box, ui.in.pressX, ui.in.pressY);
     ui.text(rc(x + 200, y + 27, w - 200, 16),
@@ -646,8 +649,9 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
         ui.rect(nameBox, cInset, 7);
         ui.frameRect(nameBox, a.focus == Focus::SingerName ? cAccent : cBorder, 5);
         ui.text(rc(nameBox.left + 8, nameBox.top, nameBox.right - nameBox.left - 12, 26),
-                a.singerFilter + (a.focus == Focus::SingerName ? L"▏" : L""), 13,
-                cText, 0, false);
+                a.singerFilter +
+                    (a.focus == Focus::SingerName && caretOn() ? L"▏" : L""),
+                13, cText, 0, false);
         if (ui.in.pressed && hit(nameBox, ui.in.pressX, ui.in.pressY))
             a.focus = Focus::SingerName;
         if (!a.singerFilter.empty() &&
@@ -674,7 +678,9 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
         ui.rect(box, cInset, 7);
         ui.frameRect(box, a.focus == Focus::Search ? cAccent : cBorder, 5);
         ui.text(rc(box.left + 8, box.top, box.right - box.left - 12, 26),
-                a.search + (a.focus == Focus::Search ? L"▏" : L""), 13, cText, 0, false);
+                a.search +
+                    (a.focus == Focus::Search && caretOn() ? L"▏" : L""),
+                13, cText, 0, false);
         if (ui.in.pressed && hit(box, ui.in.pressX, ui.in.pressY)) a.focus = Focus::Search;
         if (ui.button(300, rc(r.right - 182, r.top + 8, 84, 26), L"+ QUEUE", cGreen))
             queueSelected(a);
@@ -684,52 +690,70 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
         }
     }
 
-    // Column layout shared by the header and the rows.
+    // Column layout from the model: visible columns (colSeq order) share the
+    // flexible width by normalized colFrac. Column ids: 0 TITLE 1 ARTIST
+    // 2 GENRE 3 YEAR 4 BPM 5 TIME (sort ids map via kColSort).
+    static const wchar_t* kColName[6] = {L"TITLE", L"ARTIST", L"GENRE",
+                                         L"YEAR",  L"BPM",    L"TIME"};
+    static const int kColSort[6] = {1, 0, 2, 3, 4, 5};
     const float listLeft = r.left + 6, listRight = r.right - r.left - 12 + r.left + 6;
-    const float cw = (listRight - listLeft) - 66 - a.timeW - 8;
-    const float wTitle = cw * a.colB[0], wArtist = cw * (a.colB[1] - a.colB[0]),
-                wGenre = cw * (a.colB[2] - a.colB[1]), wYear = cw * (1.f - a.colB[2]);
-    const float xTitle = listLeft + 66, xArtist = xTitle + wTitle,
-                xGenre = xArtist + wArtist, xYear = xGenre + wGenre;
+    const float cw = (listRight - listLeft) - 66 - 8;
+    int visIds[6];
+    int nVis = 0;
+    float fracSum = 0.f;
+    for (int k = 0; k < 6; ++k) {
+        const int id = a.colSeq[k];
+        if (!a.colShow[id]) continue;
+        visIds[nVis++] = id;
+        fracSum += a.colFrac[id];
+    }
+    float colX[6]{}, colW[6]{};
+    {
+        float cx0 = listLeft + 66;
+        for (int v = 0; v < nVis; ++v) {
+            colX[v] = cx0;
+            colW[v] = cw * (a.colFrac[visIds[v]] / fracSum);
+            cx0 += colW[v];
+        }
+    }
 
     if (a.nav != NavMode::Singers && a.nav != NavMode::History) { // sort headers
         const float hy = r.top + 40;
-        // Column dividers: drag to resize (persisted). Handled before the
-        // sort clicks so a divider press never toggles a sort.
-        const float bx[4] = {xArtist, xGenre, xYear, listRight - a.timeW};
-        for (int k = 0; k < 4; ++k) {
-            const D2D1_RECT_F dz = rc(bx[k] - 5, hy, 10, 20);
+        // Right-click the header strip = column manager (reorder/show).
+        if (ui.in.rpressed && ui.in.rY >= hy - 4 && ui.in.rY <= hy + 20 &&
+            ui.in.rX >= listLeft && ui.in.rX <= listRight)
+            a.prompt = App::Prompt::Columns;
+        // Dividers between consecutive visible columns: drag shifts the width
+        // share between the two neighbours. Handled before sort clicks.
+        for (int v = 1; v < nVis; ++v) {
+            const D2D1_RECT_F dz = rc(colX[v] - 5, hy, 10, 20);
             const bool overDz = hit(dz, ui.in.mx, ui.in.my);
-            if (overDz || a.colDrag == k) a.hoverResize = true;
-            if (ui.in.pressed && hit(dz, ui.in.pressX, ui.in.pressY)) a.colDrag = k;
-            ui.rect(rc(bx[k] - 4, hy, 1, 18),
-                    a.colDrag == k || overDz ? cAccent : cBorder, 0);
+            if (overDz || a.colDrag == v) a.hoverResize = true;
+            if (ui.in.pressed && hit(dz, ui.in.pressX, ui.in.pressY)) a.colDrag = v;
+            ui.rect(rc(colX[v] - 4, hy, 1, 18),
+                    a.colDrag == v || overDz ? cAccent : cBorder, 0);
         }
         if (!ui.in.down) a.colDrag = -1;
-        if (a.colDrag == 3) { // duration column edge
-            a.timeW = std::clamp(listRight - ui.in.mx, 46.f, 140.f);
-        } else if (a.colDrag >= 0 && cw > 0) {
-            const float lo = (a.colDrag > 0 ? a.colB[a.colDrag - 1] : 0.f) + 0.06f;
-            const float hi = (a.colDrag < 2 ? a.colB[a.colDrag + 1] : 1.f) - 0.06f;
-            a.colB[a.colDrag] = std::clamp((ui.in.mx - xTitle) / cw, lo, hi);
+        if (a.colDrag >= 1 && a.colDrag < nVis && cw > 0) {
+            const int li = visIds[a.colDrag - 1], ri = visIds[a.colDrag];
+            const float pair = a.colFrac[li] + a.colFrac[ri];
+            const float minF = 0.04f * fracSum;
+            float newL = (ui.in.mx - colX[a.colDrag - 1]) / cw * fracSum;
+            newL = std::clamp(newL, minF, pair - minF);
+            a.colFrac[li] = newL;
+            a.colFrac[ri] = pair - newL;
         }
-        ui.text(rc(listRight - a.timeW, hy, a.timeW - 18, 18), L"TIME", 10, cDim, 2,
-                true);
-        struct Col { const wchar_t* name; float x, w; int id; };
-        const Col cols[] = {{L"TITLE", xTitle, wTitle, 1},
-                            {L"ARTIST", xArtist, wArtist, 0},
-                            {L"GENRE", xGenre, wGenre, 2},
-                            {L"YEAR", xYear, wYear, 3}};
-        for (const Col& c : cols) {
-            const D2D1_RECT_F hr = rc(c.x + 8, hy, c.w - 16, 18);
-            const bool active = a.sortCol == c.id;
-            std::wstring t = c.name;
+        for (int v = 0; v < nVis; ++v) {
+            const int id = visIds[v];
+            const D2D1_RECT_F hr = rc(colX[v] + 8, hy, colW[v] - 16, 18);
+            const bool active = a.sortCol == kColSort[id];
+            std::wstring t = kColName[id];
             if (active) t += a.sortAsc ? L" ▲" : L" ▼";
-            ui.text(hr, t, 10, active ? cAccent : cDim, 0, true);
+            ui.text(hr, t, 10, active ? cAccent : cDim, id >= 4 ? 2 : 0, true);
             if (a.nav != NavMode::Playlist && a.colDrag < 0 && ui.in.pressed &&
                 hit(hr, ui.in.pressX, ui.in.pressY)) {
-                if (a.sortCol == c.id) a.sortAsc = !a.sortAsc;
-                else { a.sortCol = c.id; a.sortAsc = true; }
+                if (a.sortCol == kColSort[id]) a.sortAsc = !a.sortAsc;
+                else { a.sortCol = kColSort[id]; a.sortAsc = true; }
                 a.searchDirty = true;
             }
         }
@@ -824,7 +848,7 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
             ui.text(rc(row.left + 66, y, 130, rowH), hrow.singer, 13, cAccent, 0, true);
             ui.text(rc(row.left + 204, y, row.right - row.left - 264, rowH),
                     hrow.song.label, 13, cText, 0, false);
-            ui.text(rc(row.right - a.timeW, y, a.timeW - 18, rowH),
+            ui.text(rc(row.right - 66, y, 48, rowH),
                     fmtTime(double(hrow.song.durMs) / 1000), 12, cDim, 2, false);
         } else if (a.nav == NavMode::Singers) {
             const SingerRow& s = a.singers[i];
@@ -869,14 +893,31 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
             if (played) ui.circle(row.left + 3, y + 12, 3, cRed);
             ui.text(rc(row.left + 8, y, 50, rowH), typeTag(m.type), 11,
                     played ? cDim : typeColor(m.type), 0, true);
-            ui.text(rc(xTitle, y, wTitle - 8, rowH),
-                    m.title.empty() ? m.label : m.title, 13, cText, 0, false);
-            ui.text(rc(xArtist, y, wArtist - 8, rowH), m.artist, 13, cDim, 0, false);
-            ui.text(rc(xGenre, y, wGenre - 8, rowH), m.genre, 12, cDim, 0, false);
-            ui.text(rc(xYear, y, wYear - 8, rowH),
-                    m.year > 0 ? std::to_wstring(m.year) : L"", 12, cDim, 0, false);
-            ui.text(rc(row.right - a.timeW, y, a.timeW - 18, rowH),
-                    fmtTime(double(m.durMs) / 1000), 12, cDim, 2, false);
+            for (int v = 0; v < nVis; ++v) {
+                const int id = visIds[v];
+                const D2D1_RECT_F cell =
+                    rc(colX[v], y, colW[v] - (id >= 4 ? 18.f : 8.f), rowH);
+                switch (id) {
+                case 0:
+                    ui.text(cell, m.title.empty() ? m.label : m.title, 13, cText,
+                            0, false);
+                    break;
+                case 1: ui.text(cell, m.artist, 13, cDim, 0, false); break;
+                case 2: ui.text(cell, m.genre, 12, cDim, 0, false); break;
+                case 3:
+                    ui.text(cell, m.year > 0 ? std::to_wstring(m.year) : L"", 12,
+                            cDim, 0, false);
+                    break;
+                case 4:
+                    ui.text(cell, m.bpm > 0 ? std::to_wstring(m.bpm) : L"", 12,
+                            cDim, 2, false);
+                    break;
+                case 5:
+                    ui.text(cell, fmtTime(double(m.durMs) / 1000), 12, cDim, 2,
+                            false);
+                    break;
+                }
+            }
         }
     }
     // Drop-target line while reordering the rotation (active section only).
@@ -1009,6 +1050,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         ui.in.down = false;
         ui.in.mx = ui.in.my = -10000;
     }
+    if (ui.in.pressed) a.focus = Focus::None; // boxes re-claim when hit
     ui.text(rc(16, 8, 300, 32), L"KARAOKE DJ", 20, cAccent, 0, true);
     wchar_t perf[48];
     swprintf(perf, 48, L"CPU %.1f%%   RAM %d MB", a.cpuPct, a.ramMb);
@@ -1180,17 +1222,48 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         }
         const bool confirm = a.prompt == App::Prompt::Confirm;
         const bool singer = a.prompt == App::Prompt::NewSinger;
+        const bool columns = a.prompt == App::Prompt::Columns;
         ui.rect(rc(0, 0, W, H), col(0x000000, 0.55f), 0);
-        const float pw = confirm ? 560.f : 440.f, ph = 132;
+        const float pw = columns ? 380.f : confirm ? 560.f : 440.f,
+                    ph = columns ? 292.f : 132.f;
         const D2D1_RECT_F p = rc((W - pw) / 2, (H - ph) / 2, pw, ph);
         ui.rect(p, cPanel, 10);
         ui.frameRect(p, confirm ? cRed : cAccent, 10);
         ui.text(rc(p.left + 16, p.top + 10, pw - 32, 16),
-                confirm   ? a.confirmTitle
+                columns   ? L"BROWSER COLUMNS"
+                : confirm ? a.confirmTitle
                 : singer  ? L"ADD TO ROTATION — NEW SINGER"
                           : L"NEW PLAYLIST",
                 11, confirm ? cRed : cAccent, 0, true);
-        if (confirm) {
+        if (columns) {
+            static const wchar_t* names[6] = {L"Title", L"Artist", L"Genre",
+                                              L"Year",  L"BPM",    L"Time"};
+            float cy2 = p.top + 34;
+            for (int k = 0; k < 6; ++k) {
+                const int id = a.colSeq[k];
+                if (ui.button(520 + k, rc(p.left + 16, cy2, 28, 24), L"▴",
+                              cAccent) &&
+                    k > 0)
+                    std::swap(a.colSeq[k], a.colSeq[k - 1]);
+                if (ui.button(530 + k, rc(p.left + 48, cy2, 28, 24), L"▾",
+                              cAccent) &&
+                    k < 5)
+                    std::swap(a.colSeq[k], a.colSeq[k + 1]);
+                ui.text(rc(p.left + 88, cy2, 120, 24), names[id], 13,
+                        a.colShow[id] ? cText : cDim, 0, a.colShow[id]);
+                if (ui.toggle(540 + k, rc(p.right - 100, cy2, 84, 24),
+                              a.colShow[id] ? L"SHOWN" : L"HIDDEN",
+                              a.colShow[id], cGreen)) {
+                    int vis = 0; // never hide the last visible column
+                    for (bool b : a.colShow) vis += b ? 1 : 0;
+                    if (!a.colShow[id] || vis > 1) a.colShow[id] = !a.colShow[id];
+                }
+                cy2 += 30;
+            }
+            if (ui.button(500, rc(p.right - 96, p.bottom - 38, 80, 26), L"DONE",
+                          cGreen, true))
+                a.prompt = App::Prompt::None;
+        } else if (confirm) {
             ui.text(rc(p.left + 16, p.top + 34, pw - 32, 18), a.confirmL1, 12,
                     cText, 0, false);
             ui.text(rc(p.left + 16, p.top + 54, pw - 32, 18), a.confirmL2, 11,
@@ -1207,13 +1280,15 @@ void drawUi(App& a, Ui& ui, float W, float H) {
             ui.rect(box, cInset, 7);
             ui.frameRect(box, cAccent, 5);
             ui.text(rc(box.left + 8, box.top, box.right - box.left - 16, 28),
-                    a.promptText + L"▏", 13, cText, 0, false);
+                    a.promptText + (caretOn() ? L"▏" : L""), 13, cText, 0,
+                    false);
             if (ui.button(500, rc(p.right - 176, p.bottom - 40, 72, 28),
                           singer ? L"ADD" : L"CREATE", cGreen, true))
                 commitPrompt(a);
         }
-        if (ui.button(501, rc(p.right - 96, p.bottom - 40, 80, 28), L"CANCEL",
-                      confirm ? cDim : cRed) ||
+        if ((!columns &&
+             ui.button(501, rc(p.right - 96, p.bottom - 40, 80, 28), L"CANCEL",
+                       confirm ? cDim : cRed)) ||
             (ui.in.pressed && !hit(p, ui.in.pressX, ui.in.pressY)))
             a.prompt = App::Prompt::None; // click outside also cancels
     }

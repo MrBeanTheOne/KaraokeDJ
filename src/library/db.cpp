@@ -119,6 +119,7 @@ bool Db::open(const std::wstring& path) {
     exec("ALTER TABLE media_item ADD COLUMN year INTEGER;");
     exec("ALTER TABLE media_item ADD COLUMN cue_in_ms INTEGER DEFAULT 0;");
     exec("ALTER TABLE media_item ADD COLUMN cue_out_ms INTEGER DEFAULT 0;");
+    exec("ALTER TABLE media_item ADD COLUMN bpm INTEGER DEFAULT 0;");
     return true;
 }
 

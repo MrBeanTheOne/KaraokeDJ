@@ -31,14 +31,28 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
                          420.f);
     a.queueW = std::clamp(float(atof(getSetting(a.db, "queue_w", "330").c_str())),
                           300.f, 560.f);
-    a.colB[0] = std::clamp(float(atof(getSetting(a.db, "col_b0", "0.44").c_str())),
-                           0.06f, 0.88f);
-    a.colB[1] = std::clamp(float(atof(getSetting(a.db, "col_b1", "0.74").c_str())),
-                           a.colB[0] + 0.06f, 0.94f);
-    a.colB[2] = std::clamp(float(atof(getSetting(a.db, "col_b2", "0.90").c_str())),
-                           a.colB[1] + 0.06f, 0.97f);
-    a.timeW = std::clamp(float(atof(getSetting(a.db, "col_tw", "66").c_str())), 46.f,
-                         140.f);
+    { // columns: "seq|show|frac" triplets, e.g. "0:1:0.34,1:1:0.24,..."
+        const std::string cs = getSetting(a.db, "columns", "");
+        int idx = 0;
+        size_t pos = 0;
+        while (idx < 6 && pos < cs.size()) {
+            int id = 0, show = 1;
+            float frac = 0.1f;
+            if (sscanf_s(cs.c_str() + pos, "%d:%d:%f", &id, &show, &frac) == 3 &&
+                id >= 0 && id < 6) {
+                a.colSeq[idx] = id;
+                a.colShow[id] = show != 0;
+                a.colFrac[id] = std::clamp(frac, 0.04f, 0.9f);
+                ++idx;
+            }
+            const size_t c = cs.find(',', pos);
+            if (c == std::string::npos) break;
+            pos = c + 1;
+        }
+        bool vis = false; // never end up with zero visible columns
+        for (bool b : a.colShow) vis |= b;
+        if (!vis) a.colShow[0] = true;
+    }
     a.idleTitle = wide(getSetting(a.db, "idle_title", "\xE2\x99\xAA  KARAOKE NIGHT"));
     a.scanTags = getSetting(a.db, "scan_tags", "1") == "1";
     a.autoGainOn = getSetting(a.db, "auto_gain", "1") == "1";
@@ -61,12 +75,17 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "queue_open", a.queueOpen ? "1" : "0");
     setSetting(a.db, "side_w", std::to_string(int(a.sideW)));
     setSetting(a.db, "queue_w", std::to_string(int(a.queueW)));
-    char cb[32];
-    for (int k = 0; k < 3; ++k) {
-        snprintf(cb, 32, "%.3f", a.colB[k]);
-        setSetting(a.db, k == 0 ? "col_b0" : k == 1 ? "col_b1" : "col_b2", cb);
+    {
+        std::string cs;
+        char cb[48];
+        for (int k = 0; k < 6; ++k) {
+            const int id = a.colSeq[k];
+            snprintf(cb, 48, "%s%d:%d:%.3f", k ? "," : "", id,
+                     a.colShow[id] ? 1 : 0, a.colFrac[id]);
+            cs += cb;
+        }
+        setSetting(a.db, "columns", cs);
     }
-    setSetting(a.db, "col_tw", std::to_string(int(a.timeW)));
     setSetting(a.db, "idle_title", utf8(a.idleTitle));
     setSetting(a.db, "scan_tags", a.scanTags ? "1" : "0");
     setSetting(a.db, "auto_gain", a.autoGainOn ? "1" : "0");
@@ -224,7 +243,7 @@ void reloadBrowser(App& a) {
         a.results.clear();
         Db::Stmt q;
         a.db.prepare(q, "SELECT m.id, m.artist, m.title, m.path, m.type, m.duration_ms, "
-                        "m.genre, m.year "
+                        "m.genre, m.year, m.bpm "
                         "FROM playlist_item pi JOIN media_item m ON m.id=pi.media_id "
                         "WHERE pi.playlist_id=?1 ORDER BY pi.position");
         q.bind(1, a.navPlaylist);
@@ -233,6 +252,7 @@ void reloadBrowser(App& a) {
             Match m = readMatch(q);
             m.genre = wide(q.colText(6));
             m.year = q.colInt(7);
+            m.bpm = q.colInt(8);
             if (!termLower.empty() &&
                 foldW(m.label + L" " + m.path).find(termLower) == std::wstring::npos)
                 continue;

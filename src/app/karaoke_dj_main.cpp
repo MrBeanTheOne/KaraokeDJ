@@ -301,17 +301,22 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         // Keyboard input is consumed immediately — the loop runs several times
         // per drawn frame, and reprocessing pending characters duplicates them.
         for (wchar_t c : g_pending.typed) {
+            Focus tgt = a.focus; // typing with no focus goes to the view's box
+            if (a.prompt == App::Prompt::None && tgt == Focus::None)
+                tgt = a.nav == NavMode::Singers ? Focus::SingerName
+                                                : Focus::Search;
             std::wstring& target =
                 a.prompt != App::Prompt::None ? a.promptText
-                : a.focus == Focus::SingerName ? a.singerFilter
-                : a.focus == Focus::IdleTitle  ? a.idleTitle
-                                               : a.search;
+                : tgt == Focus::SingerName    ? a.singerFilter
+                : tgt == Focus::IdleTitle     ? a.idleTitle
+                                              : a.search;
             if (c == 8) { if (!target.empty()) target.pop_back(); }
             else target += c;
-            if (a.prompt == App::Prompt::None && a.focus == Focus::Search)
-                a.searchDirty = true;
-            if (a.prompt == App::Prompt::None && a.focus == Focus::SingerName)
-                a.navDirty = true; // singer filter re-queries the view
+            if (a.prompt == App::Prompt::None) {
+                a.focus = tgt; // the box lights up once you type
+                if (tgt == Focus::Search) a.searchDirty = true;
+                if (tgt == Focus::SingerName) a.navDirty = true;
+            }
         }
         g_pending.typed.clear();
         if (g_pending.enter) {

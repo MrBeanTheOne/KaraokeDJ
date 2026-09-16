@@ -16,6 +16,7 @@ void WaveformScanner::cancel() {
     cancel_.store(false);
     ready_.store(0);
     loud_.store(0.f);
+    bpm_.store(0);
     for (auto& b : bins_) b.store(0.f);
 }
 
@@ -35,6 +36,13 @@ void WaveformScanner::start(const std::wstring& path) {
                     double sumsq = 0.0;
                     float rms[kBins]{};
                     int bin = 0;
+                    // Onset envelope for BPM: energy per 512-frame hop
+                    // (93.75 Hz), positive flux only.
+                    std::vector<float> onset;
+                    onset.reserve(size_t(total / 512) + 8);
+                    double hopE = 0.0;
+                    float prevE = 0.f;
+                    uint32_t hopN = 0;
                     auto closeBin = [&]() {
                         bins_[bin].store(peak, std::memory_order_relaxed);
                         rms[bin] = binFrames
@@ -56,6 +64,14 @@ void WaveformScanner::start(const std::wstring& path) {
                             if (v > peak) peak = v;
                             sumsq += double(v) * v;
                             ++binFrames;
+                            hopE += double(v) * v;
+                            if (++hopN == 512) {
+                                const float e = float(hopE / 512.0);
+                                onset.push_back((std::max)(0.f, e - prevE));
+                                prevE = e;
+                                hopE = 0.0;
+                                hopN = 0;
+                            }
                             if (++frame >= (uint64_t(bin) + 1) * perBin) {
                                 closeBin();
                                 if (bin >= kBins) break;
@@ -70,6 +86,34 @@ void WaveformScanner::start(const std::wstring& path) {
                         double sum = 0.0;
                         for (int i = 0; i < top; ++i) sum += rms[i];
                         loud_.store(float(sum / top), std::memory_order_release);
+                    }
+                    // BPM: autocorrelate the onset envelope over 60-180 BPM
+                    // lags (hop rate 93.75 Hz), mild preference for 80-160.
+                    if (onset.size() > 1800 &&
+                        !cancel_.load(std::memory_order_relaxed)) {
+                        double mean = 0.0;
+                        for (float v : onset) mean += v;
+                        mean /= double(onset.size());
+                        for (float& v : onset) v -= float(mean);
+                        const double hopHz = 48000.0 / 512.0;
+                        double best = 0.0;
+                        int bestLag = 0;
+                        const int loLag = int(hopHz * 60.0 / 180.0);  // ~31
+                        const int hiLag = int(hopHz * 60.0 / 60.0);   // ~94
+                        for (int lag = loLag; lag <= hiLag; ++lag) {
+                            double c = 0.0;
+                            const size_t n = onset.size() - lag;
+                            for (size_t i = 0; i < n; i += 2) // stride 2: plenty
+                                c += double(onset[i]) * onset[i + lag];
+                            const double b = hopHz * 60.0 / lag;
+                            const double pref =
+                                (b >= 80.0 && b <= 160.0) ? 1.0 : 0.85;
+                            c *= pref / double(n);
+                            if (c > best) { best = c; bestLag = lag; }
+                        }
+                        if (bestLag > 0)
+                            bpm_.store(int(hopHz * 60.0 / bestLag + 0.5),
+                                       std::memory_order_release);
                     }
                 }
             }

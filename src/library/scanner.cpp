@@ -52,7 +52,8 @@ static void filenameGuess(const fs::path& p, std::wstring& artist, std::wstring&
 }
 
 static void readTags(const std::wstring& path, std::wstring& artist, std::wstring& title,
-                     std::wstring& genre, int64_t& year, int64_t& durMs) {
+                     std::wstring& genre, int64_t& year, int64_t& durMs,
+                     int64_t& bpm) {
     IPropertyStore* ps = nullptr;
     if (FAILED(SHGetPropertyStoreFromParsingName(path.c_str(), nullptr, GPS_DEFAULT,
                                                  IID_PPV_ARGS(&ps))))
@@ -82,6 +83,11 @@ static void readTags(const std::wstring& path, std::wstring& artist, std::wstrin
     if (SUCCEEDED(ps->GetValue(PKEY_Media_Duration, &v)) && v.vt == VT_UI8)
         durMs = int64_t(v.uhVal.QuadPart / 10000);
     PropVariantClear(&v);
+    if (SUCCEEDED(ps->GetValue(PKEY_Music_BeatsPerMinute, &v)) && v.vt == VT_LPWSTR) {
+        const int b = _wtoi(v.pwszVal);
+        if (b >= 40 && b <= 250) bpm = b; // sane range only
+    }
+    PropVariantClear(&v);
     ps->Release();
 }
 
@@ -94,7 +100,7 @@ struct Item {
 };
 struct Meta {
     std::wstring artist, title, genre;
-    int64_t year = 0, durMs = 0;
+    int64_t year = 0, durMs = 0, bpm = 0;
     std::atomic<bool> ready{false};
 };
 } // namespace
@@ -198,7 +204,7 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
                 Meta& m = metas[i];
                 if (work[i].type != "unsupported")
                     readTags(work[i].path, m.artist, m.title, m.genre, m.year,
-                             m.durMs);
+                             m.durMs, m.bpm);
                 m.ready.store(true, std::memory_order_release);
             }
             CoUninitialize();
@@ -234,12 +240,14 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
         Db::Stmt up;
         db.prepare(up,
                    "INSERT INTO media_item(path,type,title,artist,duration_ms,file_size,"
-                   "modified_time,status,genre,year) VALUES(?1,?2,?3,?4,?5,?6,?7,'ok',"
-                   "?8,?9) "
+                   "modified_time,status,genre,year,bpm) VALUES(?1,?2,?3,?4,?5,?6,?7,"
+                   "'ok',?8,?9,?10) "
                    "ON CONFLICT(path) DO UPDATE SET type=?2,title=?3,artist=?4,"
-                   "duration_ms=?5,file_size=?6,modified_time=?7,genre=?8,year=?9");
+                   "duration_ms=?5,file_size=?6,modified_time=?7,genre=?8,year=?9,"
+                   "bpm=CASE WHEN ?10>0 THEN ?10 ELSE bpm END");
         up.bind(1, utf8(w.path)).bind(2, w.type).bind(3, utf8(title)).bind(4, utf8(artist));
         up.bind(5, m.durMs).bind(6, w.size).bind(7, w.mtime).bind(9, m.year);
+        up.bind(10, m.bpm);
         if (readFileTags) up.bind(8, utf8(m.genre));
         else up.bindNull(8); // NULL genre = "rescan once" marker: a later
                              // tags-enabled import fills these rows in

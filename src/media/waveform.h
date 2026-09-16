@@ -19,11 +19,14 @@ public:
     // Track loudness: mean RMS of the loudest 20% of bins (the choruses), so
     // quiet intros/outros don't skew it. 0 until the scan finishes.
     float loudness() const { return loud_.load(std::memory_order_acquire); }
+    // Detected tempo (rounded BPM), 0 until the scan finishes or if unsure.
+    int bpm() const { return bpm_.load(std::memory_order_acquire); }
 
 private:
     std::atomic<float> bins_[kBins]{};
     std::atomic<int> ready_{0};
     std::atomic<float> loud_{0.f};
+    std::atomic<int> bpm_{0};
     std::atomic<bool> cancel_{false};
     std::thread th_;
 };

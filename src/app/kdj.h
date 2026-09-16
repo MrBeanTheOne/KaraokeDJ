@@ -62,7 +62,7 @@ static const D2D1_COLOR_F cHover = col(0x1E1E23);
 
 enum class MixMode { Fade, Smart };
 enum class NavMode { Library, Playlist, Folder, Singers, Settings, History };
-enum class Focus { Search, SingerName, IdleTitle };
+enum class Focus { None, Search, SingerName, IdleTitle };
 
 // itemId >= 0: rotation entry; -1: section divider; -2: play-history entry.
 struct SingerRow {
@@ -119,7 +119,8 @@ struct App {
     std::wstring dbPath;
     std::wstring search, singerName = L"Guest";
     std::wstring singerFilter; // singers view: filter to one singer
-    Focus focus = Focus::Search;
+    Focus focus = Focus::None; // None = no box lit; typing goes to the
+                               // view's natural box and focuses it
     bool searchDirty = true, navDirty = true;
     NavMode nav = NavMode::Library;
     int64_t navPlaylist = -1;
@@ -135,9 +136,13 @@ struct App {
     std::deque<Match> queue;
     int selLib = -1, selQueue = -1;
     std::set<int> selRows;    // multi-selection (shift/ctrl click) in the browser
-    float colB[3] = {0.44f, 0.74f, 0.90f}; // column boundaries as fractions
-    float timeW = 66.f;       // duration column width (resizable, col_tw)
-    int colDrag = -1;         // divider being dragged (0..2 = colB, 3 = timeW)
+    // Browser columns: kColNames order = TITLE ARTIST GENRE YEAR BPM TIME.
+    // colSeq = display order (values are column ids), colShow = visibility,
+    // colFrac = width shares (normalized over the visible set).
+    int colSeq[6] = {0, 1, 2, 3, 4, 5};
+    bool colShow[6] = {true, true, true, true, true, true};
+    float colFrac[6] = {0.34f, 0.24f, 0.13f, 0.09f, 0.09f, 0.11f};
+    int colDrag = -1; // index into the VISIBLE sequence being resized
     float libScroll = 0, queueScroll = 0, sideScroll = 0;
     bool sidebarOpen = true, queueOpen = true;
     float sideW = 220.f; // resizable via the divider next to the sidebar
@@ -206,7 +211,7 @@ struct App {
 
     // In-app modal: text input (new singer / new playlist) or a themed
     // CONFIRM box (all destructive actions — no native MessageBox).
-    enum class Prompt { None, NewSinger, NewPlaylist, Confirm };
+    enum class Prompt { None, NewSinger, NewPlaylist, Confirm, Columns };
     enum class ConfirmAction {
         None, RemoveFolder, DeletePlaylist, CleanMissing, ClearRotation,
         ClearHistory

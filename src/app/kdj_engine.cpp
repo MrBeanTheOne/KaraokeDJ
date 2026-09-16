@@ -181,6 +181,10 @@ std::vector<std::wstring> rotationSingers(App& a) {
 
 // Confirm the "new singer" modal: the name becomes the current singer too.
 void commitPrompt(App& a) {
+    if (a.prompt == App::Prompt::Columns) { // Enter closes the editor
+        a.prompt = App::Prompt::None;
+        return;
+    }
     if (a.prompt == App::Prompt::Confirm) {
         switch (a.confirmAction) {
         case App::ConfirmAction::RemoveFolder:
@@ -490,6 +494,20 @@ void engineTick(App& a) {
             }
         }
         a.smartCueSet[d] = true;
+    }
+
+    // Detected BPM write-back: the scan measures tempo; store it once so the
+    // browser's BPM column fills in as tracks get cued/played.
+    for (int d = 0; d < 2; ++d) {
+        const int bpm = a.wave[d].bpm();
+        if (bpm <= 0 || a.label[d].empty() || !a.deckMatch[d].id) continue;
+        if (a.deckMatch[d].bpm > 0) continue; // already known (tag or earlier)
+        Db::Stmt q;
+        a.db.prepare(q, "UPDATE media_item SET bpm=?2 WHERE id=?1 AND bpm=0");
+        q.bind(1, a.deckMatch[d].id).bind(2, int64_t(bpm));
+        q.step();
+        a.deckMatch[d].bpm = bpm; // don't re-write every tick
+        a.searchDirty = true;     // column refreshes on next reload
     }
 
     // Auto gain: once the waveform scan has measured a track's loudness,
