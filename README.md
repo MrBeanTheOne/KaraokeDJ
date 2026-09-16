@@ -31,7 +31,9 @@ video output for the crowd.
 
 ### Library
 - **Fast parallel import** with live progress; closing mid-import is safe and
-  a rescan continues where it stopped.
+  a rescan continues where it stopped. Importing mid-gig is fine too: while
+  a deck is on air the scan threads drop to background priority so playback
+  always wins.
 - **Accent- and case-insensitive search** ("demo" finds "DÉMO").
 - **Sortable, reorderable columns** — drag dividers to resize, right-click
   the header to reorder or hide columns (Title / Artist / Genre / Year /

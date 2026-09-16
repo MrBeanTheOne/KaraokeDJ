@@ -17,10 +17,15 @@ struct ScanProgress {
     std::atomic<int> total{0};  // files that need tag reads (new/changed)
     std::atomic<int> done{0};   // tag reads finished
     std::atomic<bool> cancel{false};
+    // While true, the walk and tag-read threads run in OS background mode so
+    // a mid-gig import never competes with playback. The app keeps this
+    // synced to "a deck is on air"; import runs full speed otherwise.
+    std::atomic<bool> gentle{false};
 
     void reset() {
         phase = walked = total = done = 0;
         cancel = false;
+        gentle = false;
     }
 };
 

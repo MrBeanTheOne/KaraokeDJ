@@ -105,6 +105,22 @@ struct Meta {
 };
 } // namespace
 
+// Flips the calling thread into/out of OS background mode (CPU + I/O
+// deprioritized) following ScanProgress::gentle. Begin/end must pair on the
+// same thread, so each scan thread owns one of these.
+namespace {
+struct GentleMode {
+    bool on = false;
+    void apply(bool want) {
+        if (want == on) return;
+        SetThreadPriority(GetCurrentThread(), want ? THREAD_MODE_BACKGROUND_BEGIN
+                                                   : THREAD_MODE_BACKGROUND_END);
+        on = want;
+    }
+    ~GentleMode() { apply(false); }
+};
+} // namespace
+
 ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
                         bool readFileTags) {
     ScanStats st;
@@ -122,11 +138,14 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
     std::vector<Raw> raw;
     std::set<std::wstring> all; // lowercased paths of every media file seen
     std::error_code ec;
+    GentleMode gm; // walk yields to live playback (phase 4 commits stay
+                   // normal priority: they hold the write lock briefly)
     for (fs::recursive_directory_iterator
              it(root, fs::directory_options::skip_permission_denied, ec),
          end;
          it != end; it.increment(ec)) {
         if (ec || prog->cancel.load(std::memory_order_relaxed)) break;
+        gm.apply(prog->gentle.load(std::memory_order_relaxed));
         if (!it->is_regular_file(ec)) continue;
         const fs::path& p = it->path();
         std::wstring ext = lowerCopy(p.extension().wstring());
@@ -197,7 +216,9 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
     for (unsigned t = 0; t < nThreads; ++t) {
         workers.emplace_back([&]() {
             CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            GentleMode gm; // tag reads yield to live playback
             for (;;) {
+                gm.apply(prog->gentle.load(std::memory_order_relaxed));
                 const size_t i = next.fetch_add(1);
                 if (i >= work.size() || prog->cancel.load(std::memory_order_relaxed))
                     break;

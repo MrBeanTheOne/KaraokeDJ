@@ -362,6 +362,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             if (!a.pickResult.empty()) startImport(a, a.pickResult);
             a.pickResult.clear();
         }
+        // A mid-gig import yields to playback (scan threads follow this).
+        a.scanProg.gentle.store(a.mixer.activeDeck.load() >= 0,
+                                std::memory_order_relaxed);
         if (a.scanning.load()) { // live import progress in the status line
             wchar_t b[160];
             if (a.scanProg.phase.load() == 0) {
