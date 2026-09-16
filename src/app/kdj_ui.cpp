@@ -629,6 +629,43 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
     ui.text(rc(x + 230, y, w - 230, 28),
             L"drop entries whose file was deleted (unplugged drives are left alone)",
             10, cDim, 0, false);
+    y += 44;
+
+    ui.text(rc(x, y, w, 16), L"PHONE REQUESTS", 11, cDim, 0, true);
+    y += 24;
+    if (ui.toggle(620, rc(x, y, 300, 28), L"ALLOW PHONE REQUESTS", a.webOn,
+                  cGreen)) {
+        if (a.webOn) { // turning it off tears everything down immediately
+            a.web.stop();
+            a.webOn = false;
+            a.status = L"phone requests off";
+        } else if (a.web.start(a.dbPath)) {
+            a.webOn = true;
+            a.status = L"phone requests on";
+        } else {
+            a.status = L"phone requests: server failed to start";
+        }
+        setSetting(a.db, "web_on", a.webOn ? "1" : "0");
+    }
+    ui.text(rc(x + 310, y, w - 310, 28),
+            L"singers search and request from their phones (same Wi-Fi / hotspot)",
+            10, cDim, 0, false);
+    y += 34;
+    if (a.webOn && a.web.running()) {
+        // The LAN address walks the adapter list — cache it a few seconds.
+        static std::wstring cachedUrl;
+        static ULONGLONG urlAt = 0;
+        if (GetTickCount64() - urlAt > 3000 || urlAt == 0) {
+            cachedUrl = a.web.url();
+            urlAt = GetTickCount64();
+        }
+        ui.text(rc(x, y, w, 18),
+                cachedUrl.empty()
+                    ? L"No network found — join Wi-Fi or start a mobile hotspot"
+                    : L"Phones open:  " + cachedUrl +
+                          L"   (QR shows on the video output between songs)",
+                11, cachedUrl.empty() ? cRed : cText, 0, false);
+    }
 }
 
 void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
@@ -1064,6 +1101,13 @@ void drawUi(App& a, Ui& ui, float W, float H) {
     std::wstring vlabel = a.outMonitor < 0
                               ? L"VIDEO OUT: OFF"
                               : L"VIDEO OUT: MON " + std::to_wstring(a.outMonitor);
+    if (a.webOn || !a.reqInbox.empty()) { // phone-request inbox badge
+        wchar_t rl[32];
+        swprintf(rl, 32, L"REQUESTS (%d)", int(a.reqInbox.size()));
+        if (ui.toggle(402, rc(W - 446, 44, 132, 30), rl, !a.reqInbox.empty(),
+                      cGreen))
+            a.prompt = App::Prompt::Requests;
+    }
     // SETTINGS opens its own window (main loop services the request).
     if (ui.toggle(401, rc(W - 306, 44, 110, 30), L"SETTINGS",
                   a.settingsWnd != nullptr, cAccent))
@@ -1227,19 +1271,61 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         const bool confirm = a.prompt == App::Prompt::Confirm;
         const bool singer = a.prompt == App::Prompt::NewSinger;
         const bool columns = a.prompt == App::Prompt::Columns;
+        const bool reqs = a.prompt == App::Prompt::Requests;
+        const int nReq = (std::min)(9, int(a.reqInbox.size()));
         ui.rect(rc(0, 0, W, H), col(0x000000, 0.55f), 0);
-        const float pw = columns ? 380.f : confirm ? 560.f : 440.f,
-                    ph = columns ? 292.f : 132.f;
+        const float pw = reqs ? 640.f : columns ? 380.f : confirm ? 560.f : 440.f,
+                    ph = reqs      ? 96.f + (std::max)(nReq, 1) * 32.f
+                         : columns ? 292.f
+                                   : 132.f;
         const D2D1_RECT_F p = rc((W - pw) / 2, (H - ph) / 2, pw, ph);
         ui.rect(p, cPanel, 10);
         ui.frameRect(p, confirm ? cRed : cAccent, 10);
         ui.text(rc(p.left + 16, p.top + 10, pw - 32, 16),
-                columns   ? L"BROWSER COLUMNS"
+                reqs      ? L"PHONE REQUESTS"
+                : columns ? L"BROWSER COLUMNS"
                 : confirm ? a.confirmTitle
                 : singer  ? L"ADD TO ROTATION — NEW SINGER"
                           : L"NEW PLAYLIST",
                 11, confirm ? cRed : cAccent, 0, true);
-        if (columns) {
+        if (reqs) {
+            float cy2 = p.top + 34;
+            if (a.reqInbox.empty())
+                ui.text(rc(p.left + 16, cy2, pw - 32, 26),
+                        L"No pending requests.", 12, cDim, 0, false);
+            int addK = -1, killK = -1;
+            for (int k = 0; k < nReq; ++k) {
+                const PhoneRequest& pr = a.reqInbox[k];
+                ui.text(rc(p.left + 16, cy2, 140, 26), pr.singer, 12, cAccent, 0,
+                        true);
+                ui.text(rc(p.left + 162, cy2, pw - 162 - 190, 26), pr.song.label,
+                        12, cText, 0, false);
+                if (ui.button(560 + k, rc(p.right - 176, cy2 + 1, 84, 24), L"ADD",
+                              cGreen, true))
+                    addK = k;
+                if (ui.button(575 + k, rc(p.right - 86, cy2 + 1, 70, 24),
+                              L"REJECT", cRed))
+                    killK = k;
+                cy2 += 32;
+            }
+            if (int(a.reqInbox.size()) > nReq)
+                ui.text(rc(p.left + 16, cy2 + 2, pw - 32, 16),
+                        L"+ " + std::to_wstring(a.reqInbox.size() - nReq) +
+                            L" more waiting",
+                        10, cDim, 0, false);
+            if (addK >= 0) { // into the rotation under that singer
+                addToRotationAs(a, a.reqInbox[addK].song,
+                                a.reqInbox[addK].singer);
+                a.status = L"rotation: " + a.reqInbox[addK].singer + L" — " +
+                           a.reqInbox[addK].song.label;
+                a.reqInbox.erase(a.reqInbox.begin() + addK);
+            } else if (killK >= 0) {
+                a.reqInbox.erase(a.reqInbox.begin() + killK);
+            }
+            if (ui.button(500, rc(p.right - 96, p.bottom - 38, 80, 26), L"DONE",
+                          cGreen, true))
+                a.prompt = App::Prompt::None;
+        } else if (columns) {
             static const wchar_t* names[6] = {L"Title", L"Artist", L"Genre",
                                               L"Year",  L"BPM",    L"Time"};
             float cy2 = p.top + 34;
@@ -1290,7 +1376,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                           singer ? L"ADD" : L"CREATE", cGreen, true))
                 commitPrompt(a);
         }
-        if ((!columns &&
+        if ((!columns && !reqs &&
              ui.button(501, rc(p.right - 96, p.bottom - 40, 80, 28), L"CANCEL",
                        confirm ? cDim : cRed)) ||
             (ui.in.pressed && !hit(p, ui.in.pressX, ui.in.pressY)))

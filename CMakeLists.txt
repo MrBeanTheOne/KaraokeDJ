@@ -20,6 +20,7 @@ target_include_directories(harness PRIVATE src)
 target_link_libraries(harness PRIVATE mfplat mfreadwrite mfuuid ole32 avrt psapi)
 
 add_executable(video_harness
+  external/qrcodegen/qrcodegen.cpp
   src/app/video_harness_main.cpp
   src/karaoke/cdg_renderer.cpp
   src/media/zip_media.cpp
@@ -29,7 +30,7 @@ add_executable(video_harness
   src/playback/mixer.cpp
   src/audio/wasapi_out.cpp
   src/video/video_window.cpp)
-target_include_directories(video_harness PRIVATE src)
+target_include_directories(video_harness PRIVATE src external/qrcodegen)
 target_link_libraries(video_harness PRIVATE miniz mfplat mfreadwrite mfuuid ole32 avrt d2d1 d3d11
   dwrite)
 
@@ -69,10 +70,12 @@ add_executable(karaoke_dj WIN32
   src/playback/deck.cpp
   src/playback/mixer.cpp
   src/audio/wasapi_out.cpp
-  src/video/video_window.cpp)
-target_include_directories(karaoke_dj PRIVATE src)
+  src/video/video_window.cpp
+  src/web/request_server.cpp
+  external/qrcodegen/qrcodegen.cpp)
+target_include_directories(karaoke_dj PRIVATE src external/httplib external/qrcodegen)
 target_link_libraries(karaoke_dj PRIVATE sqlite3 miniz normaliz psapi mfplat mfreadwrite mfuuid ole32 avrt d3d11
-  d2d1 dwrite shell32 propsys)
+  d2d1 dwrite shell32 propsys ws2_32 iphlpapi)
 
 add_executable(test_core tests/unit/test_core.cpp src/karaoke/cdg_renderer.cpp)
 target_include_directories(test_core PRIVATE src)
@@ -109,4 +112,10 @@ set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_COMPRESSOR "/SOLID lzma") # ffmpeg squeezes ~3x
+# Inbound firewall rule for the phone-request server (silent if the user
+# never enables the feature; removed again on uninstall).
+set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
+    "ExecWait 'netsh advfirewall firewall delete rule name=\"Karaoke DJ\"'\nExecWait 'netsh advfirewall firewall add rule name=\"Karaoke DJ\" dir=in action=allow program=\"$INSTDIR\\karaoke_dj.exe\"'")
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
+    "ExecWait 'netsh advfirewall firewall delete rule name=\"Karaoke DJ\"'")
 include(CPack)

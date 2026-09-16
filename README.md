@@ -41,6 +41,17 @@ video output for the crowd.
 - **Artist/title swap** for mis-tagged files, played-tonight markers
   (red dot), zebra striping, multi-select (shift-click) drag to queue.
 
+### Phone requests (optional)
+- Flip **Allow phone requests** in Settings and singers on the venue Wi-Fi
+  (or the laptop's mobile hotspot) get a mobile page to search the library
+  and request songs under their name — a QR code appears on the waiting
+  screen between songs.
+- Requests land in a **REQUESTS** inbox in the header; the DJ approves each
+  one into the singer rotation or rejects it. Per-phone throttling keeps
+  pranksters out.
+- Strictly opt-in and fully isolated: off by default, and when off no server,
+  thread, or port exists. Only song metadata is ever served.
+
 ### Running the night
 - **Singer rotation** — right-click any track to add it under a singer;
   reorder the rotation by dragging; completed / skipped / no-show entries
@@ -80,8 +91,9 @@ The installer target additionally expects `redist\yt-dlp.exe` and
 cd build && cpack -C Release
 ```
 
-SQLite and miniz are vendored; everything else is Windows SDK (Media
-Foundation, WASAPI, Direct2D/DirectWrite).
+SQLite, miniz, cpp-httplib and qrcodegen are vendored (`external/`);
+everything else is Windows SDK (Media Foundation, WASAPI,
+Direct2D/DirectWrite, Winsock).
 
 ## Layout
 
@@ -93,5 +105,6 @@ src/media/     Media Foundation decode, waveform/loudness/BPM analysis
 src/playback/  deck engine (transport, mixing, markers)
 src/karaoke/   CDG rendering + karaoke ZIP handling
 src/video/     video windows (deck previews + fullscreen output)
+src/web/       optional phone-request server (embedded page + JSON API)
 src/library/   SQLite library, scanner/import, search
 ```

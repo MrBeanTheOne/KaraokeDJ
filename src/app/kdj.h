@@ -38,6 +38,7 @@
 #include "playback/mixer.h"
 #include "ui/im.h"
 #include "video/video_window.h"
+#include "web/request_server.h"
 
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
@@ -220,7 +221,7 @@ struct App {
 
     // In-app modal: text input (new singer / new playlist) or a themed
     // CONFIRM box (all destructive actions — no native MessageBox).
-    enum class Prompt { None, NewSinger, NewPlaylist, Confirm, Columns };
+    enum class Prompt { None, NewSinger, NewPlaylist, Confirm, Columns, Requests };
     enum class ConfirmAction {
         None, RemoveFolder, DeletePlaylist, CleanMissing, ClearRotation,
         ClearHistory
@@ -247,6 +248,12 @@ struct App {
     // In-app video previews: presentVideo bumps frameSerial on fresh frames,
     // the mixer panel uploads to the Ui bitmap cache when it lags behind.
     uint64_t frameSerial[2] = {0, 0}, shownSerial[2] = {0, 0};
+
+    // Phone requests (optional embedded LAN server, off by default). When
+    // webOn is false the server object is inert — no thread, no socket.
+    RequestServer web;
+    bool webOn = false;
+    std::vector<PhoneRequest> reqInbox; // pending, shown in the REQUESTS modal
 
     // YouTube download (yt-dlp.exe beside the app or on PATH)
     std::thread ytThread;

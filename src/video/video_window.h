@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include <string>
+#include <vector>
 
 struct VideoFrame;
 struct ID2D1Factory;
@@ -32,6 +33,9 @@ public:
         idleTitle_ = title;
         idleDetail_ = detail;
     }
+    // Waiting-screen QR ("scan to request a song"). "" hides it; the module
+    // grid is regenerated only when the url changes.
+    void setQr(const std::wstring& url);
     // 0 = fit (letterbox), 1 = fill (crop), 2 = stretch.
     void setFitMode(int m) { fit_ = m; }
     bool pump(); // process messages; false once closed or ESC pressed
@@ -56,6 +60,9 @@ private:
     ID2D1HwndRenderTarget* rt_ = nullptr;
     IDWriteFactory* dw_ = nullptr;
     std::wstring idleTitle_, idleDetail_;
+    std::wstring qrUrl_;
+    std::vector<uint8_t> qrMods_; // qrSize_ x qrSize_ (1 = dark module)
+    int qrSize_ = 0;
     ID2D1Bitmap* bmp_[2] = {nullptr, nullptr};
     uint32_t bw_[2] = {0, 0}, bh_[2] = {0, 0};
     int fit_ = 0; // 0 fit, 1 fill, 2 stretch

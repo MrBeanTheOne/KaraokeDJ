@@ -80,7 +80,7 @@ static void openSettingsWindow(App& a, HWND owner, HINSTANCE hi) {
     if (auto getDpi = reinterpret_cast<GetDpiFn>(GetProcAddress(
             GetModuleHandleW(L"user32.dll"), "GetDpiForWindow")))
         dpi = getDpi(owner);
-    const int w = MulDiv(690, dpi, 96), h = MulDiv(640, dpi, 96);
+    const int w = MulDiv(690, dpi, 96), h = MulDiv(760, dpi, 96);
     RECT orc{};
     GetWindowRect(owner, &orc);
     const int cx = (orc.left + orc.right - w) / 2, cy = (orc.top + orc.bottom - h) / 2;
@@ -276,6 +276,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         MessageBoxW(hwnd, L"WASAPI audio init failed", L"Karaoke DJ", MB_ICONERROR);
         return 1;
     }
+    if (a.webOn && !a.web.start(a.dbPath)) a.webOn = false; // opt-in feature
 
     Ui ui;
     if (!ui.init(hwnd)) return 1;
@@ -388,6 +389,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.bpmFinished.exchange(false)) {
             a.searchDirty = true;
             a.status = L"BPM analysis complete";
+        }
+        if (a.web.hasPending()) { // phone requests → DJ inbox + status blip
+            for (auto& r : a.web.take()) a.reqInbox.push_back(std::move(r));
+            if (!a.reqInbox.empty())
+                a.status = L"phone request: " + a.reqInbox.back().singer +
+                           L" — " + a.reqInbox.back().song.label;
         }
         if (a.ytDone.exchange(false)) {
             if (a.ytThread.joinable()) a.ytThread.join();
@@ -522,6 +529,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     if (a.scanThread.joinable()) a.scanThread.join(); // committed rows survive
     a.bpmStop.store(true); // finished BPMs are already committed row-by-row
     if (a.bpmThread.joinable()) a.bpmThread.join();
+    a.web.stop();
     if (a.ytThread.joinable()) a.ytThread.join();
     a.fullOut.reset();
     a.out.stop();

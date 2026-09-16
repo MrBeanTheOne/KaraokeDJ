@@ -1,5 +1,7 @@
 #include "video/video_window.h"
 
+#include "qrcodegen.hpp"
+
 #include <d2d1.h>
 #include <dwrite.h>
 
@@ -135,6 +137,31 @@ void VideoWindow::drawSlot(int slot, float alpha) {
                     D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
 }
 
+void VideoWindow::setQr(const std::wstring& url) {
+    if (url == qrUrl_) return;
+    qrUrl_ = url;
+    qrMods_.clear();
+    qrSize_ = 0;
+    if (url.empty()) return;
+    std::string u8(url.size() * 3, 0); // the url is plain ASCII in practice
+    const int n = WideCharToMultiByte(CP_UTF8, 0, url.c_str(), int(url.size()),
+                                      u8.data(), int(u8.size()), nullptr, nullptr);
+    if (n <= 0) return;
+    u8.resize(n);
+    try {
+        const auto qr = qrcodegen::QrCode::encodeText(
+            u8.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+        qrSize_ = qr.getSize();
+        qrMods_.resize(size_t(qrSize_) * qrSize_);
+        for (int y = 0; y < qrSize_; ++y)
+            for (int x = 0; x < qrSize_; ++x)
+                qrMods_[size_t(y) * qrSize_ + x] = qr.getModule(x, y) ? 1 : 0;
+    } catch (...) {
+        qrSize_ = 0;
+        qrMods_.clear();
+    }
+}
+
 void VideoWindow::drawIdle() {
     if (idleTitle_.empty() && idleDetail_.empty()) return;
     if (!dw_ &&
@@ -166,6 +193,48 @@ void VideoWindow::drawIdle() {
         rt_->DrawTextW(idleDetail_.c_str(), UINT32(idleDetail_.size()), f,
                        D2D1::RectF(0, s.height / 2, s.width, s.height), brush);
         f->Release();
+    }
+    // Phone-request QR, bottom-right: white card, black modules, url + hint.
+    if (qrSize_ > 0) {
+        const float cell = (std::max)(2.f, s.height * 0.30f / float(qrSize_ + 8));
+        const float qw = cell * (qrSize_ + 8); // 4-module quiet zone each side
+        const float qx = s.width - qw - s.height * 0.04f;
+        const float qy = s.height - qw - s.height * 0.10f;
+        brush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        rt_->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(qx, qy, qx + qw, qy + qw), cell * 2,
+                              cell * 2),
+            brush);
+        brush->SetColor(D2D1::ColorF(D2D1::ColorF::Black));
+        const float ox = qx + cell * 4, oy = qy + cell * 4;
+        for (int my = 0; my < qrSize_; ++my)
+            for (int mx = 0; mx < qrSize_; ++mx)
+                if (qrMods_[size_t(my) * qrSize_ + mx])
+                    rt_->FillRectangle(
+                        D2D1::RectF(ox + mx * cell, oy + my * cell,
+                                    ox + (mx + 1) * cell + 0.5f,
+                                    oy + (my + 1) * cell + 0.5f),
+                        brush);
+        IDWriteTextFormat* qf = nullptr;
+        const float szQ = (std::max)(11.f, s.height * 0.022f);
+        if (dw_ && SUCCEEDED(dw_->CreateTextFormat(
+                       L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                       DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                       szQ, L"", &qf))) {
+            qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            brush->SetColor(D2D1::ColorF(0xE8ECF1));
+            const std::wstring cap = L"SCAN TO REQUEST A SONG";
+            rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
+                           D2D1::RectF(qx - 60, qy + qw + 6, qx + qw + 60,
+                                       qy + qw + 6 + szQ * 1.5f),
+                           brush);
+            brush->SetColor(D2D1::ColorF(0x9BA3AD));
+            rt_->DrawTextW(qrUrl_.c_str(), UINT32(qrUrl_.size()), qf,
+                           D2D1::RectF(qx - 60, qy + qw + 6 + szQ * 1.6f,
+                                       qx + qw + 60, qy + qw + 6 + szQ * 3.2f),
+                           brush);
+            qf->Release();
+        }
     }
     brush->Release();
 }

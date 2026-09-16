@@ -181,7 +181,8 @@ std::vector<std::wstring> rotationSingers(App& a) {
 
 // Confirm the "new singer" modal: the name becomes the current singer too.
 void commitPrompt(App& a) {
-    if (a.prompt == App::Prompt::Columns) { // Enter closes the editor
+    if (a.prompt == App::Prompt::Columns ||
+        a.prompt == App::Prompt::Requests) { // Enter closes these editors
         a.prompt = App::Prompt::None;
         return;
     }
@@ -275,9 +276,12 @@ void presentVideo(App& a) {
         if (a.autoCued[d] && !a.label[d].empty()) nextUp = L"NEXT UP:  " + a.label[d];
     if (nextUp.empty() && !a.queue.empty())
         nextUp = L"NEXT UP:  " + a.queue.front().label;
+    const std::wstring reqUrl =
+        a.webOn && a.web.running() ? a.web.url() : L"";
     for (auto* w : wins) {
         if (!w) continue;
         w->setIdleText(a.idleTitle, nextUp); // waiting screen (plan §6)
+        w->setQr(reqUrl); // no-op unless the url changed
         if (w->bitmapsLost())
             for (int d = 0; d < 2; ++d)
                 if (a.cur[d]) w->setFrame(d, *a.cur[d]);
