@@ -260,22 +260,39 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
         rs.set_content("{\"ok\":true}", "application/json");
     });
 
+    // Phones only see singable material: CDG songs (mp3g / karaoke zips) plus
+    // audio/video whose title or filename says "karaoke". Plain music videos
+    // and regular audio are the DJ's, not the crowd's.
+    static const char kKaraokeOnly[] =
+        "(type IN ('mp3g','karaoke_zip') OR (type IN ('audio','video') AND "
+        "(fold(title) LIKE '%karaoke%' OR fold(path) LIKE '%karaoke%')))";
+
     srv_->Get("/api/search", [this, authed, deny](const httplib::Request& rq,
                                                   httplib::Response& rs) {
         if (!authed(rq)) return deny(rs);
         const std::wstring term = wide(rq.get_param_value("q"));
         std::string j = "[";
         if (term.size() >= 2) {
+            const std::string sql =
+                std::string("SELECT id,artist,title,duration_ms FROM media_item "
+                            "WHERE (fold(title) LIKE ?1 OR fold(artist) LIKE ?1 "
+                            "OR fold(path) LIKE ?1) AND ") +
+                kKaraokeOnly +
+                " ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE LIMIT 30";
+            Db::Stmt q;
+            db_->prepare(q, sql.c_str());
+            q.bind(1, "%" + utf8(foldW(term)) + "%");
             bool first = true;
-            for (const Match& m : searchMedia(*db_, term, 30, L"", 0, true)) {
+            while (q.step()) {
+                const std::wstring artist = wide(q.colText(1));
+                const std::wstring title = wide(q.colText(2));
                 char head[64];
                 snprintf(head, 64, "%s{\"id\":%lld,\"d\":%lld,", first ? "" : ",",
-                         static_cast<long long>(m.id),
-                         static_cast<long long>(m.durMs));
+                         static_cast<long long>(q.colInt(0)),
+                         static_cast<long long>(q.colInt(3)));
                 j += head;
-                j += "\"t\":\"" +
-                     jesc(utf8(m.title.empty() ? m.label : m.title)) + "\",";
-                j += "\"a\":\"" + jesc(utf8(m.artist)) + "\"}";
+                j += "\"t\":\"" + jesc(utf8(title)) + "\",";
+                j += "\"a\":\"" + jesc(utf8(artist)) + "\"}";
                 first = false;
             }
         }
@@ -305,12 +322,15 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
         if (it != last.end() && now - it->second < std::chrono::seconds(10))
             return reply(429, "Easy! Wait a few seconds between requests.");
 
-        Db::Stmt q;
-        db_->prepare(q, "SELECT id,artist,title,path,type,duration_ms "
-                        "FROM media_item WHERE id=?1 AND type IN "
-                        "('audio','mp3g','video','karaoke_zip')");
+        Db::Stmt q; // same karaoke-only rule as search: a hand-crafted POST
+                    // can't request a plain music video either
+        const std::string sql =
+            std::string("SELECT id,artist,title,path,type,duration_ms "
+                        "FROM media_item WHERE id=?1 AND ") +
+            kKaraokeOnly;
+        db_->prepare(q, sql.c_str());
         q.bind(1, id);
-        if (!q.step()) return reply(404, "That song is gone from the library.");
+        if (!q.step()) return reply(404, "That song can't be requested.");
         Match m;
         m.id = q.colInt(0);
         m.artist = wide(q.colText(1));

@@ -48,6 +48,9 @@ video output for the crowd.
   (or the laptop's mobile hotspot) get a mobile page to search the library
   and request songs under their name — a QR code appears on the waiting
   screen between songs.
+- Phones only see **singable material**: CDG songs (mp3+cdg / karaoke ZIPs)
+  and tracks with "karaoke" in the title or filename. Plain music videos and
+  regular audio never show up — those stay the DJ's.
 - Requests land in a **REQUESTS** inbox in the header; the DJ approves each
   one into the singer rotation or rejects it. Per-phone throttling keeps
   pranksters out.
