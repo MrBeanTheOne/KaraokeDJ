@@ -9,6 +9,7 @@ full night from a regular laptop, no dedicated GPU required.**
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Language](https://img.shields.io/badge/C%2B%2B-20-red)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-none-4ade80)
+![License](https://img.shields.io/badge/license-all%20rights%20reserved-lightgrey)
 
 <img src="docs/app.png" alt="Karaoke DJ" width="900">
 
@@ -117,6 +118,13 @@ cd build && cpack -C Release
 SQLite, miniz, cpp-httplib and qrcodegen are vendored (`external/`);
 everything else is Windows SDK (Media Foundation, WASAPI,
 Direct2D/DirectWrite, Winsock).
+
+## ⚖️ License
+
+**All rights reserved.** The source is public for reference and transparency,
+but no use, modification, or redistribution is permitted without written
+permission — see [LICENSE](LICENSE). Bundled third-party components keep
+their own licenses ([THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)).
 
 ## 🗂️ Source layout
 
