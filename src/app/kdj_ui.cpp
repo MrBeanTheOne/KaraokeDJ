@@ -1283,10 +1283,10 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
     ui.text(rc(r.left + 14, r.top + 8, // clipped: never collides with buttons
                (std::max)(0.f, (r.right - r.left) - 218 - 22), 26),
             qh, 12, cDim, 0, true);
-    if (ui.toggle(305, rc(r.right - 218, r.top + 8, 48, 26), L"\U0001F501",
+    if (ui.toggle(305, rc(r.right - 218, r.top + 8, 48, 26), L"",
                   a.repeatOn, cGreen))
         a.repeatOn = !a.repeatOn; // repeat: finished tracks rejoin the tail
-    if (ui.button(304, rc(r.right - 164, r.top + 8, 52, 26), L"\U0001F500",
+    if (ui.button(304, rc(r.right - 164, r.top + 8, 52, 26), L"",
                   cAccent)) {
         static std::mt19937 rng{std::random_device{}()};
         std::shuffle(a.queue.begin(), a.queue.end(), rng);

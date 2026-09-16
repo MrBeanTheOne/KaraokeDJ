@@ -118,6 +118,25 @@ float Ui::fitSize(const std::wstring& s, float maxW, float base) {
     return (std::max)(8.f, base * maxW / mtr.width - 0.5f);
 }
 
+// Single PUA character = a Segoe MDL2 Assets system icon (crisp UI glyphs,
+// e.g. repeat E8EE / shuffle E8B1); Ui::text routes those here.
+IDWriteTextFormat* Ui::fmtIcon(float size) {
+    const int key = int(size) * 16 + 3; // align slot 3 is unused by fmt()
+    auto it = fmts_.find(key);
+    if (it != fmts_.end()) return it->second;
+    IDWriteTextFormat* f = nullptr;
+    dw_->CreateTextFormat(L"Segoe MDL2 Assets", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+                          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                          size, L"", &f);
+    if (f) {
+        f->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        f->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        f->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    }
+    fmts_[key] = f;
+    return f;
+}
+
 IDWriteTextFormat* Ui::fmt(float size, bool bold, int align) {
     const int key = int(size) * 16 + (bold ? 8 : 0) + align;
     auto it = fmts_.find(key);
@@ -154,8 +173,10 @@ void Ui::text(const D2D1_RECT_F& r, const std::wstring& s, float size, D2D1_COLO
               int align, bool bold) {
     if (!rt || s.empty()) return;
     const std::wstring t = uiLanguage() ? uiTr(s) : s;
+    const bool icon = t.size() == 1 && t[0] >= 0xE000 && t[0] <= 0xF8FF;
     brush_->SetColor(c);
-    rt->DrawTextW(t.c_str(), UINT32(t.size()), fmt(size, bold, align), r, brush_,
+    rt->DrawTextW(t.c_str(), UINT32(t.size()),
+                  icon ? fmtIcon(size + 2) : fmt(size, bold, align), r, brush_,
                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
 }
 

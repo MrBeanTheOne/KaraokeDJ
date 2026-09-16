@@ -111,6 +111,7 @@ private:
     // Largest font size <= base whose rendered label fits maxW (French labels
     // run long; buttons shrink text instead of clipping it).
     float fitSize(const std::wstring& s, float maxW, float base);
+    IDWriteTextFormat* fmtIcon(float size);
     IDWriteTextFormat* fmt(float size, bool bold, int align);
     bool ensureTarget();
     void releaseImages();
