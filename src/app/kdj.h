@@ -253,6 +253,8 @@ struct App {
     // webOn is false the server object is inert — no thread, no socket.
     RequestServer web;
     bool webOn = false;
+    std::wstring webPass;      // optional page password (web_pass)
+    bool setFocusPass = false; // password box focus (settings window)
     std::vector<PhoneRequest> reqInbox; // pending, shown in the REQUESTS modal
 
     // YouTube download (yt-dlp.exe beside the app or on PATH)

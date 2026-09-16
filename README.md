@@ -49,6 +49,9 @@ video output for the crowd.
 - Requests land in a **REQUESTS** inbox in the header; the DJ approves each
   one into the singer rotation or rejects it. Per-phone throttling keeps
   pranksters out.
+- Optional **password**: set one in Settings and phones must enter it once
+  (each phone remembers it afterwards). Change it mid-night and everyone is
+  asked again. Blank = open.
 - Strictly opt-in and fully isolated: off by default, and when off no server,
   thread, or port exists. Only song metadata is ever served.
 

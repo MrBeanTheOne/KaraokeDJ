@@ -276,6 +276,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         MessageBoxW(hwnd, L"WASAPI audio init failed", L"Karaoke DJ", MB_ICONERROR);
         return 1;
     }
+    a.web.setPassword(a.webPass); // set before listen: no unprotected window
     if (a.webOn && !a.web.start(a.dbPath)) a.webOn = false; // opt-in feature
 
     Ui ui;
@@ -464,14 +465,21 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             g_setUi.shutdown();
             a.settingsWnd = nullptr;
             a.setFocusTitle = false;
+            a.setFocusPass = false;
         }
-        if (a.settingsWnd) { // typed input goes to the waiting-title box
+        if (a.settingsWnd) { // typed input goes to the focused settings box
+            bool passEdited = false;
             for (wchar_t c : g_setIn.typed) {
-                if (!a.setFocusTitle) continue;
-                if (c == 8) { if (!a.idleTitle.empty()) a.idleTitle.pop_back(); }
-                else a.idleTitle += c;
+                std::wstring* t = a.setFocusTitle  ? &a.idleTitle
+                                  : a.setFocusPass ? &a.webPass
+                                                   : nullptr;
+                if (!t) continue;
+                if (c == 8) { if (!t->empty()) t->pop_back(); }
+                else *t += c;
+                passEdited |= a.setFocusPass;
             }
             g_setIn.typed.clear();
+            if (passEdited) a.web.setPassword(a.webPass); // applies live
         }
 
         if (a.navDirty) reloadNav(a);

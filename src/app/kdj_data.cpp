@@ -57,6 +57,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.scanTags = getSetting(a.db, "scan_tags", "1") == "1";
     a.autoGainOn = getSetting(a.db, "auto_gain", "1") == "1";
     a.webOn = getSetting(a.db, "web_on", "0") == "1"; // strictly opt-in
+    a.webPass = wide(getSetting(a.db, "web_pass", ""));
     a.videoFit = std::clamp(atoi(getSetting(a.db, "video_fit", "0").c_str()), 0, 2);
     a.audioDevice = getSetting(a.db, "audio_device", "");
     winW = UINT((std::max)(900, atoi(getSetting(a.db, "win_w", "0").c_str())));
@@ -91,6 +92,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "scan_tags", a.scanTags ? "1" : "0");
     setSetting(a.db, "auto_gain", a.autoGainOn ? "1" : "0");
     setSetting(a.db, "web_on", a.webOn ? "1" : "0");
+    setSetting(a.db, "web_pass", utf8(a.webPass));
     setSetting(a.db, "video_fit", std::to_string(a.videoFit));
     setSetting(a.db, "audio_device", a.audioDevice);
     setSetting(a.db, "win_w", std::to_string(winW));

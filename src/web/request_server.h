@@ -27,6 +27,9 @@ class RequestServer {
 public:
     bool start(const std::wstring& dbPath, int firstPort = 8080);
     void stop();
+    // Optional access password ("" = open). Applies live; phones that sent
+    // the right one keep it in localStorage, so they enter it exactly once.
+    void setPassword(const std::wstring& pass);
     bool running() const { return running_.load(); }
     std::wstring url() const; // http://<lan-ip>:<port>/  ("" if not running)
 
@@ -48,4 +51,5 @@ private:
 
     std::mutex mx_;
     std::vector<PhoneRequest> inbox_;
+    std::string pass_; // utf8, guarded by mx_
 };

@@ -638,8 +638,9 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
         if (a.webOn) { // turning it off tears everything down immediately
             a.web.stop();
             a.webOn = false;
+            a.setFocusPass = false;
             a.status = L"phone requests off";
-        } else if (a.web.start(a.dbPath)) {
+        } else if (a.web.setPassword(a.webPass), a.web.start(a.dbPath)) {
             a.webOn = true;
             a.status = L"phone requests on";
         } else {
@@ -651,6 +652,20 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
             L"singers search and request from their phones (same Wi-Fi / hotspot)",
             10, cDim, 0, false);
     y += 34;
+    if (a.webOn) { // optional page password, applied live as it's typed
+        ui.text(rc(x, y, 190, 26), L"Password (optional)", 12, cText, 0, false);
+        const D2D1_RECT_F pbox = rc(x + 200, y, 240, 26);
+        ui.rect(pbox, cInset, 7);
+        ui.frameRect(pbox, a.setFocusPass ? cAccent : cBorder, 5);
+        ui.text(rc(pbox.left + 8, pbox.top, 224, 26),
+                a.webPass + (a.setFocusPass && caretOn() ? L"▏" : L""), 12,
+                cText, 0, false);
+        if (ui.in.pressed)
+            a.setFocusPass = hit(pbox, ui.in.pressX, ui.in.pressY);
+        ui.text(rc(pbox.right + 10, y, w - 200 - 250, 26),
+                L"phones enter it once; blank = open", 10, cDim, 0, false);
+        y += 34;
+    }
     if (a.webOn && a.web.running()) {
         // The LAN address walks the adapter list — cache it a few seconds.
         static std::wstring cachedUrl;

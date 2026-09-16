@@ -54,6 +54,10 @@ static const char kPage[] = R"HTML(<!doctype html>
   #toast.err { background: #58151c; color: #ffb4ab; }
   #toast.show { opacity: 1; }
   .hint { color: #94949d; font-size: 13px; text-align: center; margin-top: 26px; }
+  #gate { position: fixed; inset: 0; z-index: 9; background: #0a0a0c;
+          padding: 15vh 24px 0; }
+  #gate button { width: 100%; margin-top: 14px; padding: 13px; }
+  #gate[hidden] { display: none; }
 </style></head><body>
 <h1>KARAOKE DJ</h1>
 <p class="sub">Search a song, tap REQUEST — the DJ adds you to the rotation.</p>
@@ -63,9 +67,39 @@ static const char kPage[] = R"HTML(<!doctype html>
 <input id="q" placeholder="Title or artist…" autocomplete="off">
 <div id="list"><p class="hint">Type at least 2 letters to search.</p></div>
 <div id="toast"></div>
+<div id="gate" hidden>
+  <h1>KARAOKE DJ</h1>
+  <p class="sub">This party needs a password — ask the DJ.</p>
+  <label>PASSWORD</label>
+  <input id="pw" type="password" autocomplete="off">
+  <button id="go">ENTER</button>
+  <p id="gerr" class="hint"></p>
+</div>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
+let PW = "";
+try { PW = localStorage.getItem("kdj_pw") || ""; } catch (e) {}
+function gate(show) { $("gate").hidden = !show; if (show) $("pw").focus(); }
+async function ping() {
+  try { gate(!(await fetch("/api/ping?pw=" + encodeURIComponent(PW))).ok); }
+  catch (e) {}
+}
+ping();
+$("go").addEventListener("click", async () => {
+  PW = $("pw").value;
+  try {
+    if ((await fetch("/api/ping?pw=" + encodeURIComponent(PW))).ok) {
+      try { localStorage.setItem("kdj_pw", PW); } catch (e) {}
+      gate(false);
+    } else {
+      $("gerr").textContent = "Wrong password — try again.";
+    }
+  } catch (e) { $("gerr").textContent = "Couldn't reach the DJ app."; }
+});
+$("pw").addEventListener("keydown", ev => {
+  if (ev.key === "Enter") $("go").click();
+});
 try { $("name").value = localStorage.getItem("kdj_name") || ""; } catch (e) {}
 $("name").addEventListener("input", () => {
   try { localStorage.setItem("kdj_name", $("name").value); } catch (e) {}
@@ -97,7 +131,10 @@ async function search() {
     return;
   }
   try {
-    const rows = await (await fetch("/api/search?q=" + encodeURIComponent(q))).json();
+    const rs = await fetch("/api/search?q=" + encodeURIComponent(q) +
+                           "&pw=" + encodeURIComponent(PW));
+    if (rs.status === 401) { gate(true); return; }
+    const rows = await rs.json();
     if (!rows.length) {
       $("list").innerHTML = '<p class="hint">No matches.</p>';
       return;
@@ -120,8 +157,9 @@ $("list").addEventListener("click", async ev => {
   try {
     const rs = await fetch("/api/request", {
       method: "POST",
-      body: new URLSearchParams({ id: b.dataset.id, singer: name }),
+      body: new URLSearchParams({ id: b.dataset.id, singer: name, pw: PW }),
     });
+    if (rs.status === 401) { gate(true); b.disabled = false; return; }
     const j = await rs.json();
     toast(j.msg || (rs.ok ? "Request sent!" : "Request failed"), !rs.ok);
     if (!rs.ok) b.disabled = false;
@@ -207,8 +245,24 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
         rs.set_content(kPage, "text/html; charset=utf-8");
     });
 
-    srv_->Get("/api/search", [this](const httplib::Request& rq,
-                                    httplib::Response& rs) {
+    const auto authed = [this](const httplib::Request& rq) {
+        std::lock_guard<std::mutex> lk(mx_);
+        return pass_.empty() || rq.get_param_value("pw") == pass_;
+    };
+    const auto deny = [](httplib::Response& rs) {
+        rs.status = 401;
+        rs.set_content("{\"msg\":\"password required\"}", "application/json");
+    };
+
+    srv_->Get("/api/ping", [authed, deny](const httplib::Request& rq,
+                                          httplib::Response& rs) {
+        if (!authed(rq)) return deny(rs);
+        rs.set_content("{\"ok\":true}", "application/json");
+    });
+
+    srv_->Get("/api/search", [this, authed, deny](const httplib::Request& rq,
+                                                  httplib::Response& rs) {
+        if (!authed(rq)) return deny(rs);
         const std::wstring term = wide(rq.get_param_value("q"));
         std::string j = "[";
         if (term.size() >= 2) {
@@ -228,8 +282,9 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
         rs.set_content(j + "]", "application/json");
     });
 
-    srv_->Post("/api/request", [this](const httplib::Request& rq,
-                                      httplib::Response& rs) {
+    srv_->Post("/api/request", [this, authed, deny](const httplib::Request& rq,
+                                                    httplib::Response& rs) {
+        if (!authed(rq)) return deny(rs);
         const auto reply = [&](int code, const char* msg) {
             rs.status = code;
             rs.set_content(std::string("{\"msg\":\"") + msg + "\"}",
@@ -311,6 +366,14 @@ std::wstring RequestServer::url() const {
     const std::string ip = lanIp();
     if (ip.empty()) return L"";
     return L"http://" + wide(ip) + L":" + std::to_wstring(port_) + L"/";
+}
+
+void RequestServer::setPassword(const std::wstring& pass) {
+    std::wstring t = pass;
+    while (!t.empty() && iswspace(t.front())) t.erase(0, 1);
+    while (!t.empty() && iswspace(t.back())) t.pop_back();
+    std::lock_guard<std::mutex> lk(mx_);
+    pass_ = utf8(t);
 }
 
 std::vector<PhoneRequest> RequestServer::take() {
