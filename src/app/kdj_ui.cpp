@@ -186,7 +186,9 @@ void drawDeck(App& a, Ui& ui, int d, const D2D1_RECT_F& r) {
         if (ui.button(110 + d, rc(x, by, 92, 32), paused ? L"RESUME" : L"PAUSE", ac))
             a.decks[d]->paused.store(!paused);
     }
-    if (ui.button(120 + d, rc(x + 100, by, 72, 32), L"STOP", cRed)) stopDeck(a, d);
+    // Labeled CLEAR: it empties the deck (and hands over when it was live),
+    // it doesn't halt-in-place — that's PAUSE.
+    if (ui.button(120 + d, rc(x + 100, by, 72, 32), L"CLEAR", cRed)) stopDeck(a, d);
 }
 
 void drawMixer(App& a, Ui& ui, const D2D1_RECT_F& r) {

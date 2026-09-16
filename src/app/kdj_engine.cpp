@@ -122,7 +122,7 @@ void stopDeck(App& a, int d) {
     a.lastFreed = d;
     if (a.mixer.activeDeck.load() == d) a.mixer.activeDeck.store(-1);
     if (a.pendingFade == d) a.pendingFade = -1;
-    // STOP on the live deck = move on: the other deck's cue starts — MANUAL
+    // CLEAR on the live deck = move on: the other deck's cue starts — MANUAL
     // cues included (the operator asked twice) — and because this sets the
     // pending fade, the preloader cannot pull a fresh queue track first.
     // With no cue anywhere, the queue feeds the empty deck as usual.
