@@ -93,6 +93,9 @@ install(TARGETS karaoke_dj librarian RUNTIME DESTINATION .)
 # streams. OPTIONAL: building without them still works, they just aren't
 # packaged.
 install(PROGRAMS redist/yt-dlp.exe redist/ffmpeg.exe DESTINATION . OPTIONAL)
+# License + third-party attributions ship with every install (the MIT
+# components require their notices to accompany distributed binaries).
+install(FILES LICENSE THIRD-PARTY-NOTICES.txt DESTINATION .)
 
 set(CPACK_GENERATOR NSIS)
 set(CPACK_PACKAGE_NAME "Karaoke DJ")
