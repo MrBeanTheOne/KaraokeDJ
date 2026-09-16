@@ -388,8 +388,10 @@ void handleMenu(App& a, HWND hwnd) {
         }
     } else if (req.kind == MenuReq::FolderRow && !req.path.empty()) {
         const int sel = showMenu(hwnd, a.uiScale, req.x, req.y,
-                                 {L"Remove from library"});
-        if (sel == 0) removeFolder(a, req.path);
+                                 {L"Update library (rescan folder)",
+                                  L"Remove from library"});
+        if (sel == 0) queueRescan(a, req.path);
+        else if (sel == 1) removeFolder(a, req.path);
     } else if (req.kind == MenuReq::SingerRow && req.index >= 0 &&
                req.index < int(a.singers.size())) {
         const SingerRow s = a.singers[req.index];

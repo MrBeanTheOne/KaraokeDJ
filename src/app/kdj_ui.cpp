@@ -640,6 +640,24 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
                        : L"fastest — filenames only; tags fill in on a later import",
             10, cDim, 0, false);
     y += 40;
+    if (ui.button(605, rc(x, y, 220, 28), L"UPDATE ALL FOLDERS", cAccent))
+        rescanAll(a);
+    ui.text(rc(x + 230, y, w - 230, 28),
+            L"rescan every imported folder — unchanged files skip fast", 10,
+            cDim, 0, false);
+    y += 40;
+    if (ui.toggle(606, rc(x, y, 300, 28), L"WATCH FOLDERS (AUTO-UPDATE)",
+                  a.watchOn, cGreen)) {
+        a.watchOn = !a.watchOn;
+        setSetting(a.db, "watch_folders", a.watchOn ? "1" : "0");
+        startWatcher(a); // start or stop immediately
+        a.status = a.watchOn ? L"watching library folders for changes"
+                             : L"folder watching off";
+    }
+    ui.text(rc(x + 310, y, w - 310, 28),
+            L"new/changed files import themselves shortly after they appear",
+            10, cDim, 0, false);
+    y += 40;
     if (ui.button(602, rc(x, y, 220, 28), L"CLEAN MISSING FILES", cRed))
         a.menu = {MenuReq::CleanMissing, -1, 0, 0}; // confirm runs after the frame
     ui.text(rc(x + 230, y, w - 230, 28),

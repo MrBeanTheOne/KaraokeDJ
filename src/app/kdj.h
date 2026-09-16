@@ -19,6 +19,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <random>
 #include <set>
 #include <string>
@@ -221,6 +222,18 @@ struct App {
     std::atomic<bool> scanning{false};
     std::atomic<bool> scanFinished{false};
     ScanProgress scanProg; // polled into the status line while scanning
+    std::deque<std::wstring> rescanQueue; // roots waiting for their rescan
+
+    // Folder watcher (setting watch_folders, off by default): one thread
+    // holding a change notification per scan root; any event marks the root
+    // dirty and the main loop rescans it after a quiet period (bursts of
+    // file copies collapse into one import).
+    bool watchOn = false;
+    std::thread watchThread;
+    HANDLE watchStop = nullptr;         // event: tells the thread to exit
+    std::mutex watchMx;
+    std::set<std::wstring> watchDirtyRoots; // guarded by watchMx
+    std::atomic<uint64_t> watchLastEvent{0}; // GetTickCount64 of last change
     // Folder picker runs on its own STA thread: FileOpenDialog crashes on
     // this process's MTA main thread, and a separate thread keeps the UI and
     // video output alive while the dialog is up.
@@ -377,6 +390,10 @@ Match matchFromPath(App& a, const std::wstring& path);
 std::wstring snapshotBlob(App& a);
 void restoreSnapshot(App& a);
 void startImport(App& a, const std::wstring& folder);
+void queueRescan(App& a, const std::wstring& folder); // import or wait in line
+void rescanAll(App& a);
+void startWatcher(App& a); // (re)build from scan roots; no-op when watchOn off
+void stopWatcher(App& a);
 void startBpmAnalysis(App& a);
 void startUpdateCheck(App& a, bool manual);
 std::wstring pickFolder(HWND owner);

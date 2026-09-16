@@ -58,6 +58,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.idleTitle = wide(getSetting(a.db, "idle_title", "\xE2\x99\xAA  KARAOKE NIGHT"));
     a.scanTags = getSetting(a.db, "scan_tags", "1") == "1";
     a.autoGainOn = getSetting(a.db, "auto_gain", "1") == "1";
+    a.watchOn = getSetting(a.db, "watch_folders", "0") == "1";
     a.webOn = getSetting(a.db, "web_on", "0") == "1"; // strictly opt-in
     a.webPass = wide(getSetting(a.db, "web_pass", ""));
     a.idleSub = wide(getSetting(a.db, "idle_sub", ""));
@@ -127,6 +128,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "idle_title", utf8(a.idleTitle));
     setSetting(a.db, "scan_tags", a.scanTags ? "1" : "0");
     setSetting(a.db, "auto_gain", a.autoGainOn ? "1" : "0");
+    setSetting(a.db, "watch_folders", a.watchOn ? "1" : "0");
     setSetting(a.db, "web_on", a.webOn ? "1" : "0");
     setSetting(a.db, "web_pass", utf8(a.webPass));
     setSetting(a.db, "idle_sub", utf8(a.idleSub));
@@ -561,6 +563,86 @@ void startBpmAnalysis(App& a) {
         CoUninitialize();
         a.bpmBusy.store(false);
         if (a.bpmTotal.load() > 0) a.bpmFinished.store(true);
+    });
+}
+
+// Import now, or line up behind the one that's running (the finished-import
+// handler in the main loop starts the next one).
+void queueRescan(App& a, const std::wstring& folder) {
+    if (folder.empty()) return;
+    if (!a.scanning.load()) {
+        startImport(a, folder);
+        return;
+    }
+    for (const std::wstring& q : a.rescanQueue)
+        if (q == folder) return; // already queued
+    a.rescanQueue.push_back(folder);
+}
+
+void rescanAll(App& a) {
+    Db::Stmt q;
+    a.db.prepare(q, "SELECT path FROM scan_root ORDER BY path");
+    int n = 0;
+    while (q.step()) {
+        queueRescan(a, wide(q.colText(0)));
+        ++n;
+    }
+    a.status = n ? L"updating " + std::to_wstring(n) + L" library folder(s)"
+                 : L"no imported folders yet";
+}
+
+void stopWatcher(App& a) {
+    if (a.watchStop) SetEvent(a.watchStop);
+    if (a.watchThread.joinable()) a.watchThread.join();
+    if (a.watchStop) {
+        CloseHandle(a.watchStop);
+        a.watchStop = nullptr;
+    }
+}
+
+void startWatcher(App& a) {
+    stopWatcher(a);
+    if (!a.watchOn) return;
+    std::vector<std::wstring> roots;
+    {
+        Db::Stmt q;
+        a.db.prepare(q, "SELECT path FROM scan_root ORDER BY path");
+        while (q.step()) roots.push_back(wide(q.colText(0)));
+    }
+    if (roots.empty()) return;
+    a.watchStop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    a.watchThread = std::thread([&a, roots]() {
+        // One change handle per reachable root (an unplugged drive just isn't
+        // watched until the watcher restarts). Any event marks the root
+        // dirty; the main loop rescans after things go quiet.
+        std::vector<HANDLE> handles{a.watchStop};
+        std::vector<std::wstring> owner{L""};
+        for (const std::wstring& r : roots) {
+            HANDLE h = FindFirstChangeNotificationW(
+                r.c_str(), TRUE,
+                FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME |
+                    FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE);
+            if (h != INVALID_HANDLE_VALUE) {
+                handles.push_back(h);
+                owner.push_back(r);
+            }
+        }
+        for (;;) {
+            const DWORD w = WaitForMultipleObjects(DWORD(handles.size()),
+                                                   handles.data(), FALSE,
+                                                   INFINITE);
+            if (w == WAIT_OBJECT_0 || w == WAIT_FAILED) break; // stop event
+            const size_t i = w - WAIT_OBJECT_0;
+            if (i >= handles.size()) break;
+            {
+                std::lock_guard<std::mutex> lk(a.watchMx);
+                a.watchDirtyRoots.insert(owner[i]);
+            }
+            a.watchLastEvent.store(GetTickCount64());
+            if (!FindNextChangeNotification(handles[i])) break;
+        }
+        for (size_t i = 1; i < handles.size(); ++i)
+            FindCloseChangeNotification(handles[i]);
     });
 }
 

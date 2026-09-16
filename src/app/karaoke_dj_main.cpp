@@ -279,6 +279,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     a.web.setPassword(a.webPass); // set before listen: no unprotected window
     if (a.webOn && !a.web.start(a.dbPath)) a.webOn = false; // opt-in feature
     startUpdateCheck(a, false); // silent: only speaks up when newer exists
+    startWatcher(a); // no-op unless the watch-folders setting is on
 
     Ui ui;
     if (!ui.init(hwnd)) return 1;
@@ -411,7 +412,34 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.scanFinished.exchange(false)) {
             a.navDirty = a.searchDirty = true;
             a.status = L"import complete";
-            startBpmAnalysis(a); // detect BPM for whatever just came in
+            if (!a.rescanQueue.empty()) { // next folder in the update line
+                const std::wstring next = a.rescanQueue.front();
+                a.rescanQueue.pop_front();
+                startImport(a, next);
+            } else {
+                startBpmAnalysis(a); // detect BPM once the line is empty
+                startWatcher(a);     // roots may have changed
+            }
+        }
+        // Folder watcher: rescan a changed root once it has been quiet for
+        // 5 s (a burst of copied files collapses into one import).
+        if (a.watchOn && !a.scanning.load()) {
+            const uint64_t last = a.watchLastEvent.load();
+            if (last && GetTickCount64() - last > 5000) {
+                std::wstring root;
+                {
+                    std::lock_guard<std::mutex> lk(a.watchMx);
+                    if (!a.watchDirtyRoots.empty()) {
+                        root = *a.watchDirtyRoots.begin();
+                        a.watchDirtyRoots.erase(a.watchDirtyRoots.begin());
+                    }
+                    if (a.watchDirtyRoots.empty()) a.watchLastEvent.store(0);
+                }
+                if (!root.empty()) {
+                    a.status = L"folder changed — updating library";
+                    queueRescan(a, root);
+                }
+            }
         }
         if (a.bpmBusy.load()) { // refresh the BPM column as results land
             static int bpmShown = 0;
@@ -582,6 +610,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     a.bpmStop.store(true); // finished BPMs are already committed row-by-row
     if (a.bpmThread.joinable()) a.bpmThread.join();
     if (a.updThread.joinable()) a.updThread.join();
+    stopWatcher(a);
     a.web.stop();
     if (a.ytThread.joinable()) a.ytThread.join();
     a.fullOut.reset();

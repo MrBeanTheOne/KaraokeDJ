@@ -45,6 +45,9 @@ Settings) and points you at the download when one exists.
   mid-gig import drops to background priority so playback always wins.
 - Built for **big collections**: 100k+ track libraries browse and search
   smoothly (pre-folded search text, debounced queries).
+- **Stays in sync**: right-click a folder to rescan it, one button rescans
+  everything, and an optional watcher imports new files by itself seconds
+  after they land on disk.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
 - Sortable, resizable, reorderable columns — right-click the header to choose
   what shows.
