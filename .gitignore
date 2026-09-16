@@ -9,3 +9,4 @@ KaraokeDJ-*-win64.exe
 *.db.backup
 input/
 redist/
+__pycache__/
