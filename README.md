@@ -48,11 +48,14 @@ Your library lives in `%APPDATA%\KaraokeDJ\` and survives every upgrade.
   played-tonight dots, multi-select drag to queue.
 
 ### 🖼️ Design your waiting screen
-- Between songs the output shows a screen **you lay out in Settings**: logo
-  (any png/jpg, transparency kept), title, a free message line, "next up",
-  the upcoming singer rotation, and the request QR.
-- Every element gets a show/hide toggle, a 3×3 position grid and three sizes —
-  changes appear live on the output.
+- Between songs the output shows a screen **you lay out in Settings**: a
+  background image (auto-dimmed so text stays readable), logo (transparency
+  kept), title, a free message line, "next up", the upcoming singer rotation,
+  and the request QR.
+- Every element gets a show/hide toggle, a 3×3 position grid and three
+  sizes, with a **live preview** right in Settings — and the layout is
+  proportional, so a cheap 720p bar TV shows the same design as a 4K panel.
+- The whole designer collapses to one line when you're done.
 
 ### 🎤 Running the night
 - **Singer rotation** with per-singer history — reorder by drag, right-click

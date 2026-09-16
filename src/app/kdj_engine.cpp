@@ -288,6 +288,8 @@ void presentVideo(App& a) {
         w->setIdleScene(sc);
         if (a.idleLogoLoaded && !w->hasLogo()) w->setLogo(a.idleLogo);
         if (!a.idleLogoLoaded && w->hasLogo()) w->clearLogo();
+        if (a.idleBgLoaded && !w->hasBackground()) w->setBackground(a.idleBg);
+        if (!a.idleBgLoaded && w->hasBackground()) w->clearBackground();
         if (w->bitmapsLost())
             for (int d = 0; d < 2; ++d)
                 if (a.cur[d]) w->setFrame(d, *a.cur[d]);

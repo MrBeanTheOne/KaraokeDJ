@@ -163,7 +163,7 @@ void VideoWindow::setQr(const std::wstring& url) {
     }
 }
 
-bool loadImageFile(const std::wstring& path, VideoFrame& out) {
+bool loadImageFile(const std::wstring& path, VideoFrame& out, int maxW) {
     IWICImagingFactory* wic = nullptr;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
                                 CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))))
@@ -181,8 +181,9 @@ bool loadImageFile(const std::wstring& path, VideoFrame& out) {
         SUCCEEDED(dec->GetFrame(0, &fr)) && SUCCEEDED(fr->GetSize(&w, &h)) &&
         w && h) {
         IWICBitmapSource* src = fr;
-        if (w > 1024) { // logos don't need more; keeps upload + memory small
-            const UINT nw = 1024, nh = (std::max)(1u, UINT(uint64_t(h) * 1024 / w));
+        if (w > UINT(maxW)) { // keeps upload + memory small
+            const UINT nw = UINT(maxW),
+                       nh = (std::max)(1u, UINT(uint64_t(h) * maxW / w));
             if (SUCCEEDED(wic->CreateBitmapScaler(&sc)) &&
                 SUCCEEDED(sc->Initialize(fr, nw, nh,
                                          WICBitmapInterpolationModeFant))) {
@@ -234,6 +235,24 @@ void VideoWindow::clearLogo() {
     if (logo_) { logo_->Release(); logo_ = nullptr; }
 }
 
+void VideoWindow::setBackground(const VideoFrame& f) {
+    if (!ensureTarget() || !f.width || !f.height) return;
+    if (bg_) { bg_->Release(); bg_ = nullptr; }
+    const auto props = D2D1::BitmapProperties(D2D1::PixelFormat(
+        DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    if (FAILED(rt_->CreateBitmap(D2D1::SizeU(f.width, f.height), f.bgra.data(),
+                                 f.width * 4, props, &bg_))) {
+        bg_ = nullptr;
+        return;
+    }
+    bgw_ = f.width;
+    bgh_ = f.height;
+}
+
+void VideoWindow::clearBackground() {
+    if (bg_) { bg_->Release(); bg_ = nullptr; }
+}
+
 // The waiting screen: each enabled element renders anchored to its 3x3 grid
 // cell. Text spans the full width and uses its column as alignment, so long
 // titles stay readable; boxes (logo, QR) pin into the cell's corner.
@@ -246,6 +265,16 @@ void VideoWindow::drawIdle() {
     ID2D1SolidColorBrush* brush = nullptr;
     if (FAILED(rt_->CreateSolidColorBrush(D2D1::ColorF(0xE8ECF1), &brush))) return;
     const D2D1_SIZE_F s = rt_->GetSize();
+    if (bg_ && bgw_ && bgh_) { // fill-crop, then a scrim keeps text readable
+        const float sc = (std::max)(s.width / bgw_, s.height / bgh_);
+        const float bw2 = bgw_ * sc, bh2 = bgh_ * sc;
+        rt_->DrawBitmap(bg_,
+                        D2D1::RectF((s.width - bw2) / 2, (s.height - bh2) / 2,
+                                    (s.width + bw2) / 2, (s.height + bh2) / 2),
+                        1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        brush->SetColor(D2D1::ColorF(0, 0.45f));
+        rt_->FillRectangle(D2D1::RectF(0, 0, s.width, s.height), brush);
+    }
     const float mg = s.height * 0.05f;
     const auto sizeMul = [](int sz) {
         return sz == 0 ? 0.65f : sz == 2 ? 1.5f : 1.f;
@@ -385,6 +414,7 @@ void VideoWindow::releaseTarget() {
     for (auto& b : bmp_)
         if (b) { b->Release(); b = nullptr; }
     if (logo_) { logo_->Release(); logo_ = nullptr; }
+    if (bg_) { bg_->Release(); bg_ = nullptr; }
     bw_[0] = bw_[1] = bh_[0] = bh_[1] = 0;
     if (rt_) { rt_->Release(); rt_ = nullptr; }
 }

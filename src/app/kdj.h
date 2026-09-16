@@ -192,8 +192,12 @@ struct App {
     std::wstring idleLogoPath;    // idle_logo
     VideoFrame idleLogo;          // decoded once; engine re-uploads on loss
     bool idleLogoLoaded = false;
+    std::wstring idleBgPath;      // idle_bg (background image)
+    VideoFrame idleBg;
+    bool idleBgLoaded = false;
     std::vector<std::wstring> idleSingerLines; // next singers (reloadNav)
-    int pickKind = 0; // pickThread result routing: 0 import folder, 1 logo
+    bool idleEditorOpen = false; // WAITING SCREEN section expanded
+    int pickKind = 0; // pickThread routing: 0 import folder, 1 logo, 2 bg
     bool scanTags = true;     // read file tags during import (scan_tags)
     std::string audioDevice;  // pinned output endpoint id, "" = default
     std::vector<std::pair<std::wstring, std::wstring>> audioDevs; // id, name

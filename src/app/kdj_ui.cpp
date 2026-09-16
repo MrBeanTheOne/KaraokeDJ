@@ -679,8 +679,20 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
     }
     y += 20;
 
-    ui.text(rc(x, y, w, 16), L"WAITING SCREEN", 11, cDim, 0, true);
+    { // collapsible: a gig-night settings page stays one screen tall
+        const D2D1_RECT_F hd = rc(x, y, w, 18);
+        ui.text(hd,
+                a.idleEditorOpen ? L"WAITING SCREEN  ▾"
+                                 : L"WAITING SCREEN  ▸   (click to design)",
+                11, a.idleEditorOpen ? cAccent : cDim, 0, true);
+        if (ui.in.pressed && hit(hd, ui.in.pressX, ui.in.pressY))
+            a.idleEditorOpen = !a.idleEditorOpen;
+    }
     y += 24;
+    if (!a.idleEditorOpen) {
+        contentH = (y + scroll) - r.top + 16;
+        return;
+    }
     const auto textRow = [&](const wchar_t* label, std::wstring& val,
                              int focusId, const wchar_t* hint) {
         ui.text(rc(x, y, 190, 26), label, 12, cText, 0, false);
@@ -713,12 +725,28 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
         ui.text(rc(x + 340, y, w - 344, 26),
                 L"none — png/jpg, transparency kept", 10, cDim, 0, false);
     }
+    y += 34;
+    ui.text(rc(x, y, 190, 26), L"Background", 12, cText, 0, false);
+    if (ui.button(632, rc(x + 200, y, 130, 26), L"PICK IMAGE…", cAccent))
+        a.menu = {MenuReq::None, -4}; // STA picker runs after this frame
+    if (a.idleBgLoaded) {
+        ui.text(rc(x + 340, y, w - 384, 26), leafName(a.idleBgPath), 11, cDim,
+                0, false);
+        if (ui.button(633, rc(x + w - 34, y, 30, 26), L"✕", cRed)) {
+            a.idleBgPath.clear();
+            a.idleBgLoaded = false;
+            setSetting(a.db, "idle_bg", "");
+        }
+    } else {
+        ui.text(rc(x + 340, y, w - 344, 26),
+                L"none — fills the screen, dimmed so text stays readable", 10,
+                cDim, 0, false);
+    }
     y += 38;
-    ui.text(rc(x, y, w, 14),
-            L"each element: show · position (3×3 grid) · size — live on the "
-            L"video output",
-            10, cDim, 0, false);
+    ui.text(rc(x, y, 300, 14),
+            L"show · position (3×3) · size", 10, cDim, 0, false);
     y += 22;
+    const float elemTop = y;
     static const wchar_t* kElemNames[6] = {L"Logo",    L"Title",
                                            L"Message", L"Next up",
                                            L"Singer list", L"QR code"};
@@ -741,6 +769,101 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
                       cAccent))
             e.size = (e.size + 1) % 3;
         y += 44;
+    }
+
+    { // Live preview in the space right of the rows: same proportions as
+      // drawIdle, scaled to a 16:9 card (everything there is % of height,
+      // which is also why bar TVs at 720p/1080p render the same layout).
+        const float pw2 = w - 310;
+        const float ph2 = pw2 * 9.f / 16.f;
+        const D2D1_RECT_F P = rc(x + 310, elemTop, pw2, ph2);
+        ui.rect(P, col(0x000000), 4);
+        // slots on the settings Ui: 0 = logo, 1 = background
+        static std::wstring upLogo, upBg; // last uploaded (per settings Ui)
+        if (a.idleBgLoaded) {
+            if (upBg != a.idleBgPath || !ui.image(1, P)) {
+                ui.setImage(1, a.idleBg.bgra.data(), a.idleBg.width,
+                            a.idleBg.height);
+                upBg = a.idleBgPath;
+                ui.image(1, P);
+            }
+            ui.rect(P, col(0x000000, 0.45f), 4);
+        }
+        const float H = ph2, MG = H * 0.05f;
+        const auto mul = [](int sz) {
+            return sz == 0 ? 0.65f : sz == 2 ? 1.5f : 1.f;
+        };
+        const auto rowY = [&](int pos, float hgt) {
+            const int rr = pos / 3;
+            return rr == 0   ? P.top + MG
+                   : rr == 2 ? P.bottom - MG - hgt
+                             : (P.top + P.bottom - hgt) / 2;
+        };
+        const auto pText = [&](const std::wstring& t, const IdleElem& e,
+                               float base, D2D1_COLOR_F c2, bool bold) {
+            if (!e.on || t.empty()) return;
+            const float sz = (std::max)(6.f, H * base * mul(e.size));
+            ui.text(rc(P.left + MG, rowY(e.pos, sz * 1.3f), pw2 - 2 * MG,
+                       sz * 1.3f),
+                    t, sz, c2, e.pos % 3 == 0 ? 0 : e.pos % 3 == 2 ? 2 : 1,
+                    bold);
+        };
+        const IdleElem& lg = a.idleElems[0];
+        if (lg.on && a.idleLogoLoaded && a.idleLogo.height) {
+            float bh2 = H * 0.22f * mul(lg.size);
+            float bw3 = bh2 * float(a.idleLogo.width) / float(a.idleLogo.height);
+            const float mx = pw2 * 0.6f;
+            if (bw3 > mx) { bh2 *= mx / bw3; bw3 = mx; }
+            const int c2 = lg.pos % 3;
+            const float lx = c2 == 0   ? P.left + MG
+                             : c2 == 2 ? P.right - MG - bw3
+                                       : (P.left + P.right - bw3) / 2;
+            const D2D1_RECT_F lr = rc(lx, rowY(lg.pos, bh2), bw3, bh2);
+            if (upLogo != a.idleLogoPath || !ui.image(0, lr)) {
+                ui.setImage(0, a.idleLogo.bgra.data(), a.idleLogo.width,
+                            a.idleLogo.height);
+                upLogo = a.idleLogoPath;
+                ui.image(0, lr);
+            }
+        }
+        pText(a.idleTitle, a.idleElems[1], 0.075f, cText, true);
+        pText(a.idleSub, a.idleElems[2], 0.038f, col(0xC9CDD3), false);
+        pText(L"NEXT UP:  …", a.idleElems[3], 0.034f, col(0x4FC3F7), false);
+        if (a.idleElems[4].on) { // singer list: a few stand-in lines
+            const IdleElem& e = a.idleElems[4];
+            const float sz = (std::max)(6.f, H * 0.030f * mul(e.size));
+            const std::wstring lines[3] = {
+                L"UP NEXT",
+                a.idleSingerLines.size() > 0 ? a.idleSingerLines[0]
+                                             : L"1.  —",
+                a.idleSingerLines.size() > 1 ? a.idleSingerLines[1]
+                                             : L"2.  —"};
+            float ly = rowY(e.pos, sz * 4.f);
+            for (const std::wstring& ln : lines) {
+                ui.text(rc(P.left + MG, ly, pw2 - 2 * MG, sz * 1.25f), ln, sz,
+                        cText, e.pos % 3 == 0 ? 0 : e.pos % 3 == 2 ? 2 : 1,
+                        false);
+                ly += sz * 1.3f;
+            }
+        }
+        const IdleElem& eq = a.idleElems[5];
+        if (eq.on && a.webOn) { // stylized QR stand-in
+            const float qs = H * 0.26f * mul(eq.size);
+            const int c2 = eq.pos % 3;
+            const float qx = c2 == 0   ? P.left + MG
+                             : c2 == 2 ? P.right - MG - qs
+                                       : (P.left + P.right - qs) / 2;
+            const float qy = rowY(eq.pos, qs + 10);
+            ui.rect(rc(qx, qy, qs, qs), col(0xFFFFFF), 3);
+            const float fp = qs * 0.28f;
+            ui.rect(rc(qx + qs * 0.10f, qy + qs * 0.10f, fp, fp), col(0x000000), 1);
+            ui.rect(rc(qx + qs * 0.62f, qy + qs * 0.10f, fp, fp), col(0x000000), 1);
+            ui.rect(rc(qx + qs * 0.10f, qy + qs * 0.62f, fp, fp), col(0x000000), 1);
+            ui.rect(rc(qx + qs * 0.45f, qy + qs * 0.45f, fp * 0.6f, fp * 0.6f),
+                    col(0x000000), 1);
+        }
+        ui.frameRect(P, cBorder, 4);
+        ui.text(rc(P.left, P.bottom + 4, pw2, 14), L"PREVIEW", 9, cDim, 1, true);
     }
     contentH = (y + scroll) - r.top + 16; // for next frame's scroll clamp
 }

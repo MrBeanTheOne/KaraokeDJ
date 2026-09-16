@@ -370,6 +370,16 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                         a.status = L"waiting-screen logo set";
                     }
                     setSetting(a.db, "idle_logo", utf8(a.idleLogoPath));
+                } else if (a.pickKind == 2) { // waiting-screen background
+                    a.idleBgPath = a.pickResult;
+                    a.idleBgLoaded = loadImageFile(a.idleBgPath, a.idleBg, 1920);
+                    if (!a.idleBgLoaded) {
+                        a.idleBgPath.clear();
+                        a.status = L"couldn't read that image";
+                    } else {
+                        a.status = L"waiting-screen background set";
+                    }
+                    setSetting(a.db, "idle_bg", utf8(a.idleBgPath));
                 } else {
                     startImport(a, a.pickResult);
                 }

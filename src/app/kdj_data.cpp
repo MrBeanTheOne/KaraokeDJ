@@ -64,6 +64,12 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
         a.idleLogoLoaded = loadImageFile(a.idleLogoPath, a.idleLogo);
         if (!a.idleLogoLoaded) a.idleLogoPath.clear(); // file gone or bad
     }
+    a.idleEditorOpen = getSetting(a.db, "idle_editor", "0") == "1";
+    a.idleBgPath = wide(getSetting(a.db, "idle_bg", ""));
+    if (!a.idleBgPath.empty()) {
+        a.idleBgLoaded = loadImageFile(a.idleBgPath, a.idleBg, 1920);
+        if (!a.idleBgLoaded) a.idleBgPath.clear();
+    }
     { // waiting-screen elements: "on:pos:size," x6 (logo title message
       // next-up singers qr); defaults mirror the classic layout
         static const IdleElem defs[6] = {{true, 1, 1}, {true, 4, 2},
@@ -123,6 +129,8 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "web_pass", utf8(a.webPass));
     setSetting(a.db, "idle_sub", utf8(a.idleSub));
     setSetting(a.db, "idle_logo", utf8(a.idleLogoPath));
+    setSetting(a.db, "idle_bg", utf8(a.idleBgPath));
+    setSetting(a.db, "idle_editor", a.idleEditorOpen ? "1" : "0");
     {
         std::string es;
         char eb[32];

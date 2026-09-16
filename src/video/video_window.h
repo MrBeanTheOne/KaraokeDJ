@@ -35,8 +35,9 @@ struct IdleScene {
 };
 
 // Decode an image file (png/jpg/bmp/gif) to a BGRA VideoFrame via WIC,
-// downscaled to a sane size for a logo. COM must be initialized.
-bool loadImageFile(const std::wstring& path, VideoFrame& out);
+// downscaled to at most maxW wide (1024 suits a logo; pass 1920 for a
+// full-screen background). COM must be initialized.
+bool loadImageFile(const std::wstring& path, VideoFrame& out, int maxW = 1024);
 
 // One video output window with two bitmap slots (one per deck) so the master
 // video can crossfade with the audio transition. Letterboxed Direct2D drawing.
@@ -61,6 +62,11 @@ public:
     void setLogo(const VideoFrame& f);
     void clearLogo();
     bool hasLogo() const { return logo_ != nullptr; }
+    // Waiting-screen background image (fill-cropped + dark scrim so the
+    // text stays readable). Same device-loss re-upload contract as the logo.
+    void setBackground(const VideoFrame& f);
+    void clearBackground();
+    bool hasBackground() const { return bg_ != nullptr; }
     // 0 = fit (letterbox), 1 = fill (crop), 2 = stretch.
     void setFitMode(int m) { fit_ = m; }
     bool pump(); // process messages; false once closed or ESC pressed
@@ -90,6 +96,8 @@ private:
     uint32_t bw_[2] = {0, 0}, bh_[2] = {0, 0};
     ID2D1Bitmap* logo_ = nullptr;
     uint32_t lw_ = 0, lh_ = 0;
+    ID2D1Bitmap* bg_ = nullptr;
+    uint32_t bgw_ = 0, bgh_ = 0;
     std::wstring qrUrl_;
     std::vector<uint8_t> qrMods_; // qrSize_ x qrSize_ (1 = dark module)
     int qrSize_ = 0;
