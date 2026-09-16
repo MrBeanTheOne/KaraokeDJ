@@ -58,6 +58,34 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.autoGainOn = getSetting(a.db, "auto_gain", "1") == "1";
     a.webOn = getSetting(a.db, "web_on", "0") == "1"; // strictly opt-in
     a.webPass = wide(getSetting(a.db, "web_pass", ""));
+    a.idleSub = wide(getSetting(a.db, "idle_sub", ""));
+    a.idleLogoPath = wide(getSetting(a.db, "idle_logo", ""));
+    if (!a.idleLogoPath.empty()) {
+        a.idleLogoLoaded = loadImageFile(a.idleLogoPath, a.idleLogo);
+        if (!a.idleLogoLoaded) a.idleLogoPath.clear(); // file gone or bad
+    }
+    { // waiting-screen elements: "on:pos:size," x6 (logo title message
+      // next-up singers qr); defaults mirror the classic layout
+        static const IdleElem defs[6] = {{true, 1, 1}, {true, 4, 2},
+                                         {true, 7, 1}, {true, 7, 1},
+                                         {false, 3, 1}, {true, 8, 1}};
+        for (int k = 0; k < 6; ++k) a.idleElems[k] = defs[k];
+        const std::string es = getSetting(a.db, "idle_elems", "");
+        int idx = 0;
+        size_t pos = 0;
+        while (idx < 6 && pos < es.size()) {
+            int on = 1, pp = 4, sz = 1;
+            if (sscanf_s(es.c_str() + pos, "%d:%d:%d", &on, &pp, &sz) == 3) {
+                a.idleElems[idx].on = on != 0;
+                a.idleElems[idx].pos = std::clamp(pp, 0, 8);
+                a.idleElems[idx].size = std::clamp(sz, 0, 2);
+                ++idx;
+            }
+            const size_t c = es.find(',', pos);
+            if (c == std::string::npos) break;
+            pos = c + 1;
+        }
+    }
     a.videoFit = std::clamp(atoi(getSetting(a.db, "video_fit", "0").c_str()), 0, 2);
     a.audioDevice = getSetting(a.db, "audio_device", "");
     winW = UINT((std::max)(900, atoi(getSetting(a.db, "win_w", "0").c_str())));
@@ -93,6 +121,19 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "auto_gain", a.autoGainOn ? "1" : "0");
     setSetting(a.db, "web_on", a.webOn ? "1" : "0");
     setSetting(a.db, "web_pass", utf8(a.webPass));
+    setSetting(a.db, "idle_sub", utf8(a.idleSub));
+    setSetting(a.db, "idle_logo", utf8(a.idleLogoPath));
+    {
+        std::string es;
+        char eb[32];
+        for (int k = 0; k < 6; ++k) {
+            snprintf(eb, 32, "%s%d:%d:%d", k ? "," : "",
+                     a.idleElems[k].on ? 1 : 0, a.idleElems[k].pos,
+                     a.idleElems[k].size);
+            es += eb;
+        }
+        setSetting(a.db, "idle_elems", es);
+    }
     setSetting(a.db, "video_fit", std::to_string(a.videoFit));
     setSetting(a.db, "audio_device", a.audioDevice);
     setSetting(a.db, "win_w", std::to_string(winW));
@@ -167,6 +208,20 @@ void reloadNav(App& a) {
             if (foldW(row.singer).find(sf) == std::wstring::npos) continue;
         }
         a.singers.push_back(std::move(row));
+    }
+    if (sf.empty()) { // waiting-screen singer list follows the live rotation
+        a.idleSingerLines.clear();
+        for (const SingerRow& r2 : a.singers) {
+            if (a.idleSingerLines.size() >= 6) break;
+            if (r2.itemId < 0 ||
+                (r2.status != "waiting" && r2.status != "singing"))
+                continue;
+            const std::wstring song =
+                r2.song.title.empty() ? r2.label : r2.song.title;
+            a.idleSingerLines.push_back(
+                std::to_wstring(a.idleSingerLines.size() + 1) + L".  " +
+                r2.singer + L"  —  " + song);
+        }
     }
     if (sf.empty()) { // full rotation: divider before the finished section
         for (size_t i = 0; i < a.singers.size(); ++i) {
@@ -446,6 +501,34 @@ void startImport(App& a, const std::wstring& folder) {
         a.scanning.store(false);
         a.scanFinished.store(true);
     });
+}
+
+std::wstring pickFile(HWND owner) {
+    IFileDialog* fd = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(FileOpenDialog), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&fd))))
+        return L"";
+    static const COMDLG_FILTERSPEC kImg[] = {
+        {L"Images", L"*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp"},
+        {L"All files", L"*.*"}};
+    fd->SetFileTypes(2, kImg);
+    DWORD opts = 0;
+    fd->GetOptions(&opts);
+    fd->SetOptions(opts | FOS_FORCEFILESYSTEM);
+    std::wstring out;
+    if (SUCCEEDED(fd->Show(owner))) {
+        IShellItem* it = nullptr;
+        if (SUCCEEDED(fd->GetResult(&it))) {
+            PWSTR p = nullptr;
+            if (SUCCEEDED(it->GetDisplayName(SIGDN_FILESYSPATH, &p))) {
+                out = p;
+                CoTaskMemFree(p);
+            }
+            it->Release();
+        }
+    }
+    fd->Release();
+    return out;
 }
 
 std::wstring pickFolder(HWND owner) {

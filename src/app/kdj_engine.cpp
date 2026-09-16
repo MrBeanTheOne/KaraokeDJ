@@ -276,12 +276,18 @@ void presentVideo(App& a) {
         if (a.autoCued[d] && !a.label[d].empty()) nextUp = L"NEXT UP:  " + a.label[d];
     if (nextUp.empty() && !a.queue.empty())
         nextUp = L"NEXT UP:  " + a.queue.front().label;
-    const std::wstring reqUrl =
-        a.webOn && a.web.running() ? a.web.url() : L"";
+    IdleScene sc; // waiting screen (plan §6), arranged in Settings
+    sc.title = a.idleTitle;
+    sc.message = a.idleSub;
+    sc.nextUp = nextUp;
+    sc.singers = a.idleSingerLines;
+    sc.qrUrl = a.webOn && a.web.running() ? a.web.url() : L"";
+    for (int k = 0; k < 6; ++k) sc.elems[k] = a.idleElems[k];
     for (auto* w : wins) {
         if (!w) continue;
-        w->setIdleText(a.idleTitle, nextUp); // waiting screen (plan §6)
-        w->setQr(reqUrl); // no-op unless the url changed
+        w->setIdleScene(sc);
+        if (a.idleLogoLoaded && !w->hasLogo()) w->setLogo(a.idleLogo);
+        if (!a.idleLogoLoaded && w->hasLogo()) w->clearLogo();
         if (w->bitmapsLost())
             for (int d = 0; d < 2; ++d)
                 if (a.cur[d]) w->setFrame(d, *a.cur[d]);

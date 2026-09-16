@@ -4,6 +4,7 @@
 
 #include <d2d1.h>
 #include <dwrite.h>
+#include <wincodec.h>
 
 #include <algorithm>
 #include <vector>
@@ -162,44 +163,162 @@ void VideoWindow::setQr(const std::wstring& url) {
     }
 }
 
+bool loadImageFile(const std::wstring& path, VideoFrame& out) {
+    IWICImagingFactory* wic = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))))
+        return false;
+    bool ok = false;
+    IWICBitmapDecoder* dec = nullptr;
+    IWICBitmapFrameDecode* fr = nullptr;
+    IWICBitmapScaler* sc = nullptr;
+    IWICFormatConverter* cv = nullptr;
+    UINT w = 0, h = 0;
+    if (SUCCEEDED(wic->CreateDecoderFromFilename(path.c_str(), nullptr,
+                                                 GENERIC_READ,
+                                                 WICDecodeMetadataCacheOnDemand,
+                                                 &dec)) &&
+        SUCCEEDED(dec->GetFrame(0, &fr)) && SUCCEEDED(fr->GetSize(&w, &h)) &&
+        w && h) {
+        IWICBitmapSource* src = fr;
+        if (w > 1024) { // logos don't need more; keeps upload + memory small
+            const UINT nw = 1024, nh = (std::max)(1u, UINT(uint64_t(h) * 1024 / w));
+            if (SUCCEEDED(wic->CreateBitmapScaler(&sc)) &&
+                SUCCEEDED(sc->Initialize(fr, nw, nh,
+                                         WICBitmapInterpolationModeFant))) {
+                src = sc;
+                w = nw;
+                h = nh;
+            }
+        }
+        // Premultiplied BGRA: what D2D wants for alpha-blended DrawBitmap.
+        if (SUCCEEDED(wic->CreateFormatConverter(&cv)) &&
+            SUCCEEDED(cv->Initialize(src, GUID_WICPixelFormat32bppPBGRA,
+                                     WICBitmapDitherTypeNone, nullptr, 0,
+                                     WICBitmapPaletteTypeCustom))) {
+            out.width = w;
+            out.height = h;
+            out.bgra.assign(size_t(w) * h * 4, 0);
+            ok = SUCCEEDED(cv->CopyPixels(nullptr, w * 4, UINT(out.bgra.size()),
+                                          out.bgra.data()));
+        }
+    }
+    if (cv) cv->Release();
+    if (sc) sc->Release();
+    if (fr) fr->Release();
+    if (dec) dec->Release();
+    wic->Release();
+    return ok;
+}
+
+void VideoWindow::setIdleScene(const IdleScene& s) {
+    scene_ = s;
+    setQr(s.qrUrl);
+}
+
+void VideoWindow::setLogo(const VideoFrame& f) {
+    if (!ensureTarget() || !f.width || !f.height) return;
+    if (logo_) { logo_->Release(); logo_ = nullptr; }
+    const auto props = D2D1::BitmapProperties(D2D1::PixelFormat(
+        DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    if (FAILED(rt_->CreateBitmap(D2D1::SizeU(f.width, f.height), f.bgra.data(),
+                                 f.width * 4, props, &logo_))) {
+        logo_ = nullptr;
+        return;
+    }
+    lw_ = f.width;
+    lh_ = f.height;
+}
+
+void VideoWindow::clearLogo() {
+    if (logo_) { logo_->Release(); logo_ = nullptr; }
+}
+
+// The waiting screen: each enabled element renders anchored to its 3x3 grid
+// cell. Text spans the full width and uses its column as alignment, so long
+// titles stay readable; boxes (logo, QR) pin into the cell's corner.
 void VideoWindow::drawIdle() {
-    if (idleTitle_.empty() && idleDetail_.empty()) return;
     if (!dw_ &&
-        FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+        FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+                                   __uuidof(IDWriteFactory),
                                    reinterpret_cast<IUnknown**>(&dw_))))
         return;
     ID2D1SolidColorBrush* brush = nullptr;
     if (FAILED(rt_->CreateSolidColorBrush(D2D1::ColorF(0xE8ECF1), &brush))) return;
     const D2D1_SIZE_F s = rt_->GetSize();
-    const float szBig = (std::max)(28.f, s.height * 0.09f);
-    const float szSmall = (std::max)(16.f, s.height * 0.045f);
-    IDWriteTextFormat* f = nullptr;
-    if (SUCCEEDED(dw_->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                        DWRITE_FONT_STYLE_NORMAL,
-                                        DWRITE_FONT_STRETCH_NORMAL, szBig, L"", &f))) {
-        f->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        f->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        rt_->DrawTextW(idleTitle_.c_str(), UINT32(idleTitle_.size()), f,
-                       D2D1::RectF(0, 0, s.width, s.height - szBig), brush);
+    const float mg = s.height * 0.05f;
+    const auto sizeMul = [](int sz) {
+        return sz == 0 ? 0.65f : sz == 2 ? 1.5f : 1.f;
+    };
+    const auto band = [&](int row) { // one horizontal third of the screen
+        const float h3 = (s.height - 2 * mg) / 3;
+        return D2D1::RectF(mg, mg + row * h3, s.width - mg, mg + (row + 1) * h3);
+    };
+    const auto text = [&](const std::wstring& t, const IdleElem& e, float base,
+                          DWRITE_FONT_WEIGHT wgt, UINT32 color) {
+        if (!e.on || t.empty()) return;
+        const float sz = (std::max)(12.f, s.height * base * sizeMul(e.size));
+        IDWriteTextFormat* f = nullptr;
+        if (FAILED(dw_->CreateTextFormat(L"Segoe UI", nullptr, wgt,
+                                         DWRITE_FONT_STYLE_NORMAL,
+                                         DWRITE_FONT_STRETCH_NORMAL, sz, L"",
+                                         &f)))
+            return;
+        const int c = e.pos % 3, r = e.pos / 3;
+        f->SetTextAlignment(c == 0   ? DWRITE_TEXT_ALIGNMENT_LEADING
+                            : c == 2 ? DWRITE_TEXT_ALIGNMENT_TRAILING
+                                     : DWRITE_TEXT_ALIGNMENT_CENTER);
+        f->SetParagraphAlignment(r == 0   ? DWRITE_PARAGRAPH_ALIGNMENT_NEAR
+                                 : r == 2 ? DWRITE_PARAGRAPH_ALIGNMENT_FAR
+                                          : DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        brush->SetColor(D2D1::ColorF(color));
+        rt_->DrawTextW(t.c_str(), UINT32(t.size()), f, band(r), brush);
         f->Release();
+    };
+
+    // Logo (aspect-fit into a height budget, anchored to its cell corner).
+    const IdleElem& lg = scene_.elems[IdleScene::kLogo];
+    if (lg.on && logo_ && lh_ > 0) {
+        float bh = s.height * 0.22f * sizeMul(lg.size);
+        float bw2 = bh * float(lw_) / float(lh_);
+        const float maxW = s.width * 0.6f;
+        if (bw2 > maxW) { bh *= maxW / bw2; bw2 = maxW; }
+        const int c = lg.pos % 3, r = lg.pos / 3;
+        const float x = c == 0 ? mg : c == 2 ? s.width - mg - bw2
+                                             : (s.width - bw2) / 2;
+        const float y = r == 0 ? mg : r == 2 ? s.height - mg - bh
+                                             : (s.height - bh) / 2;
+        rt_->DrawBitmap(logo_, D2D1::RectF(x, y, x + bw2, y + bh), 1.f,
+                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     }
-    if (!idleDetail_.empty() &&
-        SUCCEEDED(dw_->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-                                        DWRITE_FONT_STYLE_NORMAL,
-                                        DWRITE_FONT_STRETCH_NORMAL, szSmall, L"", &f))) {
-        f->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        f->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        brush->SetColor(D2D1::ColorF(0x4FC3F7));
-        rt_->DrawTextW(idleDetail_.c_str(), UINT32(idleDetail_.size()), f,
-                       D2D1::RectF(0, s.height / 2, s.width, s.height), brush);
-        f->Release();
+
+    text(scene_.title, scene_.elems[IdleScene::kTitle], 0.075f,
+         DWRITE_FONT_WEIGHT_SEMI_BOLD, 0xE8ECF1);
+    text(scene_.message, scene_.elems[IdleScene::kMessage], 0.038f,
+         DWRITE_FONT_WEIGHT_NORMAL, 0xC9CDD3);
+    text(scene_.nextUp, scene_.elems[IdleScene::kNextUp], 0.034f,
+         DWRITE_FONT_WEIGHT_NORMAL, 0x4FC3F7);
+    if (!scene_.singers.empty()) {
+        std::wstring block = L"UP NEXT";
+        for (const std::wstring& ln : scene_.singers) block += L"\n" + ln;
+        text(block, scene_.elems[IdleScene::kSingers], 0.030f,
+             DWRITE_FONT_WEIGHT_NORMAL, 0xE8ECF1);
     }
-    // Phone-request QR, bottom-right: white card, black modules, url + hint.
-    if (qrSize_ > 0) {
-        const float cell = (std::max)(2.f, s.height * 0.30f / float(qrSize_ + 8));
+
+    // Phone-request QR: white card, black modules, caption + url underneath.
+    const IdleElem& eq = scene_.elems[IdleScene::kQr];
+    if (eq.on && qrSize_ > 0) {
+        const float frac = 0.26f * sizeMul(eq.size);
+        const float cell = (std::max)(2.f, s.height * frac / float(qrSize_ + 8));
         const float qw = cell * (qrSize_ + 8); // 4-module quiet zone each side
-        const float qx = s.width - qw - s.height * 0.04f;
-        const float qy = s.height - qw - s.height * 0.10f;
+        const float szQ = (std::max)(11.f, s.height * 0.020f);
+        const float capH = szQ * 3.4f;
+        const int c = eq.pos % 3, r = eq.pos / 3;
+        const float qx = c == 0 ? mg : c == 2 ? s.width - mg - qw
+                                              : (s.width - qw) / 2;
+        const float qy = r == 0   ? mg
+                         : r == 2 ? s.height - mg - qw - capH
+                                  : (s.height - qw - capH) / 2;
         brush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
         rt_->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(qx, qy, qx + qw, qy + qw), cell * 2,
@@ -216,22 +335,21 @@ void VideoWindow::drawIdle() {
                                     oy + (my + 1) * cell + 0.5f),
                         brush);
         IDWriteTextFormat* qf = nullptr;
-        const float szQ = (std::max)(11.f, s.height * 0.022f);
-        if (dw_ && SUCCEEDED(dw_->CreateTextFormat(
-                       L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                       DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                       szQ, L"", &qf))) {
+        if (SUCCEEDED(dw_->CreateTextFormat(
+                L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, szQ, L"",
+                &qf))) {
             qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
             brush->SetColor(D2D1::ColorF(0xE8ECF1));
             const std::wstring cap = L"SCAN TO REQUEST A SONG";
             rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
-                           D2D1::RectF(qx - 60, qy + qw + 6, qx + qw + 60,
+                           D2D1::RectF(qx - 80, qy + qw + 6, qx + qw + 80,
                                        qy + qw + 6 + szQ * 1.5f),
                            brush);
             brush->SetColor(D2D1::ColorF(0x9BA3AD));
             rt_->DrawTextW(qrUrl_.c_str(), UINT32(qrUrl_.size()), qf,
-                           D2D1::RectF(qx - 60, qy + qw + 6 + szQ * 1.6f,
-                                       qx + qw + 60, qy + qw + 6 + szQ * 3.2f),
+                           D2D1::RectF(qx - 80, qy + qw + 6 + szQ * 1.6f,
+                                       qx + qw + 80, qy + qw + 6 + szQ * 3.2f),
                            brush);
             qf->Release();
         }
@@ -266,6 +384,7 @@ bool VideoWindow::pump() {
 void VideoWindow::releaseTarget() {
     for (auto& b : bmp_)
         if (b) { b->Release(); b = nullptr; }
+    if (logo_) { logo_->Release(); logo_ = nullptr; }
     bw_[0] = bw_[1] = bh_[0] = bh_[1] = 0;
     if (rt_) { rt_->Release(); rt_ = nullptr; }
 }

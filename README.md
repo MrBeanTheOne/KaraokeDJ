@@ -47,6 +47,13 @@ Your library lives in `%APPDATA%\KaraokeDJ\` and survives every upgrade.
 - Playlists with drag-reorder, artist/title swap for mis-tagged files,
   played-tonight dots, multi-select drag to queue.
 
+### 🖼️ Design your waiting screen
+- Between songs the output shows a screen **you lay out in Settings**: logo
+  (any png/jpg, transparency kept), title, a free message line, "next up",
+  the upcoming singer rotation, and the request QR.
+- Every element gets a show/hide toggle, a 3×3 position grid and three sizes —
+  changes appear live on the output.
+
 ### 🎤 Running the night
 - **Singer rotation** with per-singer history — reorder by drag, right-click
   to clear for a new night, search any singer to see everything they've sung.

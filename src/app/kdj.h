@@ -180,11 +180,20 @@ struct App {
     // Settings window (separate top-level window; main.cpp owns it)
     HWND settingsWnd = nullptr;
     bool settingsOpenReq = false; // header button toggles open/close
-    bool setFocusTitle = false;   // the waiting-title box has keyboard focus
+    int setFocusBox = 0; // focused settings text box: 0 none, 1 title,
+                         // 2 request password, 3 waiting-screen message
 
     // Settings view state
     int videoFit = 0;         // 0 fit (letterbox), 1 fill (crop), 2 stretch
     std::wstring idleTitle;   // waiting-screen headline (idle_title)
+    // Waiting-screen designer: element layout, custom line, logo.
+    IdleElem idleElems[6];        // defaults in loadSettings (idle_elems)
+    std::wstring idleSub;         // custom message line (idle_sub)
+    std::wstring idleLogoPath;    // idle_logo
+    VideoFrame idleLogo;          // decoded once; engine re-uploads on loss
+    bool idleLogoLoaded = false;
+    std::vector<std::wstring> idleSingerLines; // next singers (reloadNav)
+    int pickKind = 0; // pickThread result routing: 0 import folder, 1 logo
     bool scanTags = true;     // read file tags during import (scan_tags)
     std::string audioDevice;  // pinned output endpoint id, "" = default
     std::vector<std::pair<std::wstring, std::wstring>> audioDevs; // id, name
@@ -254,7 +263,6 @@ struct App {
     RequestServer web;
     bool webOn = false;
     std::wstring webPass;      // optional page password (web_pass)
-    bool setFocusPass = false; // password box focus (settings window)
     std::vector<PhoneRequest> reqInbox; // pending, shown in the REQUESTS modal
 
     // YouTube download (yt-dlp.exe beside the app or on PATH)
@@ -337,6 +345,7 @@ void restoreSnapshot(App& a);
 void startImport(App& a, const std::wstring& folder);
 void startBpmAnalysis(App& a);
 std::wstring pickFolder(HWND owner);
+std::wstring pickFile(HWND owner); // image picker (waiting-screen logo)
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
 std::wstring youtubeCacheDir();
 void startYoutube(App& a, std::wstring url);

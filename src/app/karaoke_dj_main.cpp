@@ -359,8 +359,23 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         g_pending.enter = g_pending.del = g_pending.pgdn = g_pending.pgup = false;
         if (a.pickDone.exchange(false)) {
             if (a.pickThread.joinable()) a.pickThread.join();
-            if (!a.pickResult.empty()) startImport(a, a.pickResult);
+            if (!a.pickResult.empty()) {
+                if (a.pickKind == 1) { // waiting-screen logo
+                    a.idleLogoPath = a.pickResult;
+                    a.idleLogoLoaded = loadImageFile(a.idleLogoPath, a.idleLogo);
+                    if (!a.idleLogoLoaded) {
+                        a.idleLogoPath.clear();
+                        a.status = L"couldn't read that image";
+                    } else {
+                        a.status = L"waiting-screen logo set";
+                    }
+                    setSetting(a.db, "idle_logo", utf8(a.idleLogoPath));
+                } else {
+                    startImport(a, a.pickResult);
+                }
+            }
             a.pickResult.clear();
+            a.pickKind = 0;
         }
         // A mid-gig import yields to playback (scan threads follow this).
         a.scanProg.gentle.store(a.mixer.activeDeck.load() >= 0,
@@ -467,19 +482,19 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             g_setClosed = false;
             g_setUi.shutdown();
             a.settingsWnd = nullptr;
-            a.setFocusTitle = false;
-            a.setFocusPass = false;
+            a.setFocusBox = 0;
         }
         if (a.settingsWnd) { // typed input goes to the focused settings box
             bool passEdited = false;
             for (wchar_t c : g_setIn.typed) {
-                std::wstring* t = a.setFocusTitle  ? &a.idleTitle
-                                  : a.setFocusPass ? &a.webPass
-                                                   : nullptr;
+                std::wstring* t = a.setFocusBox == 1   ? &a.idleTitle
+                                  : a.setFocusBox == 2 ? &a.webPass
+                                  : a.setFocusBox == 3 ? &a.idleSub
+                                                       : nullptr;
                 if (!t) continue;
                 if (c == 8) { if (!t->empty()) t->pop_back(); }
                 else *t += c;
-                passEdited |= a.setFocusPass;
+                passEdited |= a.setFocusBox == 2;
             }
             g_setIn.typed.clear();
             if (passEdited) a.web.setPassword(a.webPass); // applies live

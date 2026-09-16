@@ -52,4 +52,8 @@ private:
     std::mutex mx_;
     std::vector<PhoneRequest> inbox_;
     std::string pass_; // utf8, guarded by mx_
+    // url() cache — the adapter walk costs ~1 ms and the engine asks per
+    // tick. Main-thread only.
+    mutable std::wstring urlCache_;
+    mutable unsigned long long urlAt_ = 0;
 };

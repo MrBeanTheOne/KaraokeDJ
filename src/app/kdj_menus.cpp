@@ -206,11 +206,13 @@ void addToPlaylistDb(App& a, int64_t playlistId, const Match& m) {
 void handleMenu(App& a, HWND hwnd) {
     const MenuReq req = a.menu;
     a.menu = {};
-    if (req.index == -2) { // IMPORT button: pick a folder on an STA thread
+    if (req.index == -2 || req.index == -3) { // folder / logo picker (STA)
         if (a.pickThread.joinable()) return; // picker already open
-        a.pickThread = std::thread([&a, hwnd]() {
+        a.pickKind = req.index == -3 ? 1 : 0;
+        const bool file = req.index == -3;
+        a.pickThread = std::thread([&a, hwnd, file]() {
             CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-            a.pickResult = pickFolder(hwnd);
+            a.pickResult = file ? pickFile(hwnd) : pickFolder(hwnd);
             CoUninitialize();
             a.pickDone.store(true);
         });

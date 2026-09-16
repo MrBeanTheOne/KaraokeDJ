@@ -504,24 +504,17 @@ void performCleanMissing(App& a) {
 static bool caretOn() { return (GetTickCount64() / 530) & 1; }
 
 void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
+    // The section list has outgrown small screens: the wheel scrolls it.
+    static float scroll = 0, contentH = 1100;
+    scroll = std::clamp(scroll - ui.in.wheel * 48.f, 0.f,
+                        (std::max)(0.f, contentH - (r.bottom - r.top)));
     const float x = r.left + 20;
     const float w = (std::min)(620.f, r.right - r.left - 40);
-    float y = r.top + 14;
+    float y = r.top + 14 - scroll;
+    if (ui.in.pressed) a.setFocusBox = 0; // boxes re-claim when hit
 
     ui.text(rc(x, y, w, 16), L"BEHAVIOUR", 11, cDim, 0, true);
     y += 24;
-    ui.text(rc(x, y, 190, 26), L"Waiting screen title", 12, cText, 0, false);
-    const D2D1_RECT_F box = rc(x + 200, y, w - 200, 26);
-    ui.rect(box, cInset, 7);
-    ui.frameRect(box, a.setFocusTitle ? cAccent : cBorder, 5);
-    ui.text(rc(box.left + 8, box.top, box.right - box.left - 12, 26),
-            a.idleTitle + (a.setFocusTitle && caretOn() ? L"▏" : L""), 12,
-            cText, 0, false);
-    if (ui.in.pressed)
-        a.setFocusTitle = hit(box, ui.in.pressX, ui.in.pressY);
-    ui.text(rc(x + 200, y + 27, w - 200, 16),
-            L"shown on the video output between songs", 10, cDim, 0, false);
-    y += 56;
     if (ui.toggle(603, rc(x, y, 300, 28), L"AUTO GAIN (LEVEL TRACKS)", a.autoGainOn,
                   cGreen)) {
         a.autoGainOn = !a.autoGainOn;
@@ -640,7 +633,7 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
         if (a.webOn) { // turning it off tears everything down immediately
             a.web.stop();
             a.webOn = false;
-            a.setFocusPass = false;
+            if (a.setFocusBox == 2) a.setFocusBox = 0;
             a.status = L"phone requests off";
         } else if (a.web.setPassword(a.webPass), a.web.start(a.dbPath)) {
             a.webOn = true;
@@ -658,12 +651,12 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
         ui.text(rc(x, y, 190, 26), L"Password (optional)", 12, cText, 0, false);
         const D2D1_RECT_F pbox = rc(x + 200, y, 240, 26);
         ui.rect(pbox, cInset, 7);
-        ui.frameRect(pbox, a.setFocusPass ? cAccent : cBorder, 5);
+        ui.frameRect(pbox, a.setFocusBox == 2 ? cAccent : cBorder, 5);
         ui.text(rc(pbox.left + 8, pbox.top, 224, 26),
-                a.webPass + (a.setFocusPass && caretOn() ? L"▏" : L""), 12,
-                cText, 0, false);
-        if (ui.in.pressed)
-            a.setFocusPass = hit(pbox, ui.in.pressX, ui.in.pressY);
+                a.webPass + (a.setFocusBox == 2 && caretOn() ? L"▏" : L""),
+                12, cText, 0, false);
+        if (ui.in.pressed && hit(pbox, ui.in.pressX, ui.in.pressY))
+            a.setFocusBox = 2;
         ui.text(rc(pbox.right + 10, y, w - 200 - 250, 26),
                 L"phones enter it once; blank = open", 10, cDim, 0, false);
         y += 34;
@@ -682,7 +675,74 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
                     : L"Phones open:  " + cachedUrl +
                           L"   (QR shows on the video output between songs)",
                 11, cachedUrl.empty() ? cRed : cText, 0, false);
+        y += 24;
     }
+    y += 20;
+
+    ui.text(rc(x, y, w, 16), L"WAITING SCREEN", 11, cDim, 0, true);
+    y += 24;
+    const auto textRow = [&](const wchar_t* label, std::wstring& val,
+                             int focusId, const wchar_t* hint) {
+        ui.text(rc(x, y, 190, 26), label, 12, cText, 0, false);
+        const D2D1_RECT_F tb = rc(x + 200, y, w - 200, 26);
+        ui.rect(tb, cInset, 7);
+        ui.frameRect(tb, a.setFocusBox == focusId ? cAccent : cBorder, 5);
+        ui.text(rc(tb.left + 8, tb.top, tb.right - tb.left - 12, 26),
+                val + (a.setFocusBox == focusId && caretOn() ? L"▏" : L""),
+                12, cText, 0, false);
+        if (ui.in.pressed && hit(tb, ui.in.pressX, ui.in.pressY))
+            a.setFocusBox = focusId;
+        ui.text(rc(x + 200, y + 27, w - 200, 14), hint, 10, cDim, 0, false);
+        y += 50;
+    };
+    textRow(L"Title", a.idleTitle, 1, L"the big headline between songs");
+    textRow(L"Message", a.idleSub, 3,
+            L"free text — venue name, drink specials, anything");
+    ui.text(rc(x, y, 190, 26), L"Logo", 12, cText, 0, false);
+    if (ui.button(630, rc(x + 200, y, 130, 26), L"PICK IMAGE…", cAccent))
+        a.menu = {MenuReq::None, -3}; // STA picker runs after this frame
+    if (a.idleLogoLoaded) {
+        ui.text(rc(x + 340, y, w - 384, 26), leafName(a.idleLogoPath), 11, cDim,
+                0, false);
+        if (ui.button(631, rc(x + w - 34, y, 30, 26), L"✕", cRed)) {
+            a.idleLogoPath.clear();
+            a.idleLogoLoaded = false;
+            setSetting(a.db, "idle_logo", "");
+        }
+    } else {
+        ui.text(rc(x + 340, y, w - 344, 26),
+                L"none — png/jpg, transparency kept", 10, cDim, 0, false);
+    }
+    y += 38;
+    ui.text(rc(x, y, w, 14),
+            L"each element: show · position (3×3 grid) · size — live on the "
+            L"video output",
+            10, cDim, 0, false);
+    y += 22;
+    static const wchar_t* kElemNames[6] = {L"Logo",    L"Title",
+                                           L"Message", L"Next up",
+                                           L"Singer list", L"QR code"};
+    static const wchar_t* kSizeNames[3] = {L"S", L"M", L"L"};
+    for (int k = 0; k < 6; ++k) {
+        IdleElem& e = a.idleElems[k];
+        ui.text(rc(x, y + 8, 106, 26), kElemNames[k], 12, cText, 0, false);
+        if (ui.toggle(640 + k, rc(x + 112, y + 6, 76, 26),
+                      e.on ? L"SHOWN" : L"HIDDEN", e.on, cGreen))
+            e.on = !e.on;
+        for (int c9 = 0; c9 < 9; ++c9) { // anchor grid
+            const D2D1_RECT_F cell =
+                rc(x + 206 + float(c9 % 3) * 15.f, y + float(c9 / 3) * 13.f,
+                   13, 11);
+            if (ui.in.pressed && hit(cell, ui.in.pressX, ui.in.pressY))
+                e.pos = c9;
+            ui.rect(cell, e.pos == c9 ? cGreen : col(0x2E2E34), 2);
+        }
+        if (ui.button(650 + k, rc(x + 262, y + 6, 34, 26), kSizeNames[e.size],
+                      cAccent))
+            e.size = (e.size + 1) % 3;
+        y += 44;
+    }
+    contentH = (y + scroll) - r.top + 16; // for next frame's scroll clamp
 }
 
 void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {

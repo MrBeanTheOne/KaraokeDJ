@@ -383,9 +383,14 @@ void RequestServer::stop() {
 
 std::wstring RequestServer::url() const {
     if (!running_.load()) return L"";
+    const unsigned long long now = GetTickCount64();
+    if (urlAt_ && now - urlAt_ < 10000) return urlCache_;
+    urlAt_ = now;
     const std::string ip = lanIp();
-    if (ip.empty()) return L"";
-    return L"http://" + wide(ip) + L":" + std::to_wstring(port_) + L"/";
+    urlCache_ = ip.empty() ? L""
+                           : L"http://" + wide(ip) + L":" +
+                                 std::to_wstring(port_) + L"/";
+    return urlCache_;
 }
 
 void RequestServer::setPassword(const std::wstring& pass) {
