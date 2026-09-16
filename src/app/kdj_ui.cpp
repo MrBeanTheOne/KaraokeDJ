@@ -350,6 +350,11 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
     wchar_t hr2[48];
     swprintf(hr2, 48, L"Played tonight (%zu)", a.history.size());
     rows.push_back({hr2, L"", 0, 0, false, false, NavMode::History, -1});
+    wchar_t hx[48];
+    if (a.hiddenCount > 0) { // restore view for excluded versions
+        swprintf(hx, 48, L"Excluded (%d)", a.hiddenCount);
+        rows.push_back({hx, L"##hidden", 0, 0, false, false, NavMode::Library, -1});
+    }
     rows.push_back({L"PLAYLISTS", L"", 1});
     for (auto& [name, id] : a.playlists)
         rows.push_back({name, L"", 0, 0, false, false, NavMode::Playlist, id});
@@ -406,7 +411,9 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
         const bool current =
             (row.mode == a.nav) &&
             (row.mode != NavMode::Playlist || row.plId == a.navPlaylist) &&
-            (row.mode != NavMode::Folder || row.folder == a.navFolder);
+            (row.mode != NavMode::Folder || row.folder == a.navFolder) &&
+            (row.mode != NavMode::Library ||
+             (row.folder == L"##hidden") == a.showHidden);
         if (current) ui.rect(rr, cSel, 4);
         else if (hit(rr, ui.in.mx, ui.in.my)) ui.rect(rr, cHover, 4);
 
@@ -439,6 +446,8 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
                 a.navPlaylist = row.plId;
                 a.navPlaylistName = row.mode == NavMode::Playlist ? row.text : L"";
                 a.navFolder = row.mode == NavMode::Folder ? row.folder + L"\\" : L"";
+                a.showHidden =
+                    row.mode == NavMode::Library && row.folder == L"##hidden";
                 a.focus = Focus::None;
                 a.searchDirty = true;
             }
@@ -517,6 +526,23 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
 
     ui.text(rc(x, y, w, 16), L"BEHAVIOUR", 11, cDim, 0, true);
     y += 24;
+    ui.text(rc(x, y, 90, 26), L"Language", 12, cText, 0, false);
+    if (ui.toggle(607, rc(x + 100, y, 110, 26), L"ENGLISH", a.lang == 0, cGreen) &&
+        a.lang != 0) {
+        a.lang = 0;
+        uiSetLanguage(0);
+        a.web.setLanguage(0);
+        setSetting(a.db, "lang", "0");
+    }
+    if (ui.toggle(608, rc(x + 216, y, 110, 26), L"FRANÇAIS", a.lang == 1,
+                  cGreen) &&
+        a.lang != 1) {
+        a.lang = 1;
+        uiSetLanguage(1);
+        a.web.setLanguage(1);
+        setSetting(a.db, "lang", "1");
+    }
+    y += 36;
     if (ui.toggle(603, rc(x, y, 300, 28), L"AUTO GAIN (LEVEL TRACKS)", a.autoGainOn,
                   cGreen)) {
         a.autoGainOn = !a.autoGainOn;
@@ -535,15 +561,15 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
                           L"releases/latest",
                           nullptr, nullptr, SW_SHOWNORMAL);
         ui.text(rc(x + 310, y, w - 310, 28),
-                L"opens the download page — this is v" KDJ_VERSION_W, 10,
-                cDim, 0, false);
+                uiTr(L"opens the download page — this is v") + KDJ_VERSION_W,
+                10, cDim, 0, false);
     } else {
         if (ui.button(604, rc(x, y, 300, 28), L"CHECK FOR UPDATES", cDim))
             startUpdateCheck(a, true);
         ui.text(rc(x + 310, y, w - 310, 28),
-                a.updBusy.load() ? L"checking…"
-                                 : L"this is v" KDJ_VERSION_W, 10, cDim, 0,
-                false);
+                a.updBusy.load() ? uiTr(L"checking…")
+                                 : uiTr(L"this is v") + KDJ_VERSION_W,
+                10, cDim, 0, false);
     }
     y += 44;
 
@@ -1254,16 +1280,20 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
     ui.text(rc(r.left + 14, r.top + 8, // clipped: never collides with buttons
                (std::max)(0.f, (r.right - r.left) - 218 - 22), 26),
             qh, 12, cDim, 0, true);
-    if (ui.toggle(305, rc(r.right - 218, r.top + 8, 48, 26), L"RPT", a.repeatOn,
-                  cGreen))
+    if (ui.toggle(305, rc(r.right - 218, r.top + 8, 48, 26), L"\U0001F501",
+                  a.repeatOn, cGreen))
         a.repeatOn = !a.repeatOn; // repeat: finished tracks rejoin the tail
-    if (ui.button(304, rc(r.right - 164, r.top + 8, 52, 26), L"SHUF", cAccent)) {
+    if (ui.button(304, rc(r.right - 164, r.top + 8, 52, 26), L"\U0001F500",
+                  cAccent)) {
         static std::mt19937 rng{std::random_device{}()};
         std::shuffle(a.queue.begin(), a.queue.end(), rng);
     }
-    if (ui.button(302, rc(r.right - 106, r.top + 8, 56, 26), L"CLEAR", cRed)) {
-        a.queue.clear();
-        a.selQueue = -1;
+    if (ui.button(302, rc(r.right - 106, r.top + 8, 56, 26), L"CLEAR", cRed) &&
+        !a.queue.empty()) { // mid-gig misclick protection: confirm first
+        askConfirm(a, App::ConfirmAction::ClearQueue, L"CLEAR THE QUEUE?",
+                   std::to_wstring(a.queue.size()) + L" " +
+                       uiTr(L"queued track(s) will be removed."),
+                   L"Decks and the rotation are not touched.");
     }
     if (ui.button(406, rc(r.right - 44, r.top + 8, 32, 26), L"»", cAccent))
         a.queueOpen = false;

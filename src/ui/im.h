@@ -1,4 +1,11 @@
 #pragma once
+// UI language (lang.cpp): 0 = English (strings as written), 1 = French via
+// the central dictionary. uiTr also retranslates composed heads
+// ("QUEUE (3)", "playing: X").
+void uiSetLanguage(int lang);
+int uiLanguage();
+#include <string>
+std::wstring uiTr(const std::wstring& s);
 #include <windows.h>
 #include <d2d1.h>
 #include <dwrite.h>
@@ -73,6 +80,8 @@ public:
     void setImage(int slot, const uint8_t* bgra, uint32_t w, uint32_t h);
     bool image(int slot, const D2D1_RECT_F& r);
     // align: 0 left, 1 center, 2 right (vertically centered, single line)
+    // Every label passes through uiTr(), so the language option needs no
+    // changes at draw sites.
     void text(const D2D1_RECT_F& r, const std::wstring& s, float size, D2D1_COLOR_F c,
               int align = 0, bool bold = false);
 
@@ -99,6 +108,9 @@ public:
     ID2D1HwndRenderTarget* rt = nullptr;
 
 private:
+    // Largest font size <= base whose rendered label fits maxW (French labels
+    // run long; buttons shrink text instead of clipping it).
+    float fitSize(const std::wstring& s, float maxW, float base);
     IDWriteTextFormat* fmt(float size, bool bold, int align);
     bool ensureTarget();
     void releaseImages();

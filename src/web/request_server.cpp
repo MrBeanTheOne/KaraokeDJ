@@ -170,6 +170,161 @@ $("list").addEventListener("click", async ev => {
 });
 </script></body></html>)HTML";
 
+static const char kPageFr[] = R"HTML(<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Demandes de chansons</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0a0a0c; color: #ececef;
+         font: 16px/1.4 system-ui, "Segoe UI", sans-serif;
+         padding: max(12px, env(safe-area-inset-top)) 14px 24px; }
+  h1 { font-size: 19px; letter-spacing: .12em; color: #d22c36; margin: 6px 0 2px; }
+  .sub { color: #94949d; font-size: 12px; margin: 0 0 14px; }
+  label { display: block; color: #94949d; font-size: 11px; letter-spacing: .08em;
+          margin: 12px 0 4px; }
+  input { width: 100%; padding: 12px; font-size: 16px; color: #ececef;
+          background: #141416; border: 1px solid #2a2a2f; border-radius: 9px;
+          outline: none; }
+  input:focus { border-color: #d22c36; }
+  #list { margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 4px;
+         border-bottom: 1px solid #1c1c20; }
+  .meta { flex: 1; min-width: 0; }
+  .t { font-weight: 600; white-space: nowrap; overflow: hidden;
+       text-overflow: ellipsis; }
+  .a { color: #94949d; font-size: 13px; white-space: nowrap; overflow: hidden;
+       text-overflow: ellipsis; }
+  button { flex: none; padding: 10px 14px; font-size: 13px; font-weight: 700;
+           letter-spacing: .06em; color: #fff; background: #d22c36;
+           border: 0; border-radius: 9px; }
+  button:disabled { background: #2a2a2f; color: #94949d; }
+  #toast { position: fixed; left: 14px; right: 14px;
+           bottom: max(16px, env(safe-area-inset-bottom)); padding: 13px;
+           text-align: center; font-weight: 600; border-radius: 10px;
+           background: #14532d; color: #b9f6ca; opacity: 0;
+           transition: opacity .25s; pointer-events: none; }
+  #toast.err { background: #58151c; color: #ffb4ab; }
+  #toast.show { opacity: 1; }
+  .hint { color: #94949d; font-size: 13px; text-align: center; margin-top: 26px; }
+  #gate { position: fixed; inset: 0; z-index: 9; background: #0a0a0c;
+          padding: 15vh 24px 0; }
+  #gate button { width: 100%; margin-top: 14px; padding: 13px; }
+  #gate[hidden] { display: none; }
+</style></head><body>
+<h1>KARAOKE DJ</h1>
+<p class="sub">Cherchez une chanson, touchez DEMANDER — le DJ vous ajoute à la rotation.</p>
+<label>VOTRE NOM</label>
+<input id="name" maxlength="40" placeholder="Qui chante ?" autocomplete="off">
+<label>TROUVER UNE CHANSON</label>
+<input id="q" placeholder="Titre ou artiste…" autocomplete="off">
+<div id="list"><p class="hint">Tapez au moins 2 lettres pour chercher.</p></div>
+<div id="toast"></div>
+<div id="gate" hidden>
+  <h1>KARAOKE DJ</h1>
+  <p class="sub">Cette soirée demande un mot de passe — demandez au DJ.</p>
+  <label>MOT DE PASSE</label>
+  <input id="pw" type="password" autocomplete="off">
+  <button id="go">ENTRER</button>
+  <p id="gerr" class="hint"></p>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let PW = "";
+try { PW = localStorage.getItem("kdj_pw") || ""; } catch (e) {}
+function gate(show) { $("gate").hidden = !show; if (show) $("pw").focus(); }
+async function ping() {
+  try { gate(!(await fetch("/api/ping?pw=" + encodeURIComponent(PW))).ok); }
+  catch (e) {}
+}
+ping();
+$("go").addEventListener("click", async () => {
+  PW = $("pw").value;
+  try {
+    if ((await fetch("/api/ping?pw=" + encodeURIComponent(PW))).ok) {
+      try { localStorage.setItem("kdj_pw", PW); } catch (e) {}
+      gate(false);
+    } else {
+      $("gerr").textContent = "Mauvais mot de passe — réessayez.";
+    }
+  } catch (e) { $("gerr").textContent = "Impossible de joindre le DJ."; }
+});
+$("pw").addEventListener("keydown", ev => {
+  if (ev.key === "Enter") $("go").click();
+});
+try { $("name").value = localStorage.getItem("kdj_name") || ""; } catch (e) {}
+$("name").addEventListener("input", () => {
+  try { localStorage.setItem("kdj_name", $("name").value); } catch (e) {}
+});
+let timer = 0, toastTimer = 0;
+function toast(msg, err) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = (err ? "err " : "") + "show";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = err ? "err" : ""; }, 2600);
+}
+function esc(s) {
+  return s.replace(/[&<>"]/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+}
+function fmt(ms) {
+  const s = Math.round(ms / 1000);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+$("q").addEventListener("input", () => {
+  clearTimeout(timer);
+  timer = setTimeout(search, 250);
+});
+async function search() {
+  const q = $("q").value.trim();
+  if (q.length < 2) {
+    $("list").innerHTML = '<p class="hint">Tapez au moins 2 lettres pour chercher.</p>';
+    return;
+  }
+  try {
+    const rs = await fetch("/api/search?q=" + encodeURIComponent(q) +
+                           "&pw=" + encodeURIComponent(PW));
+    if (rs.status === 401) { gate(true); return; }
+    const rows = await rs.json();
+    if (!rows.length) {
+      $("list").innerHTML = '<p class="hint">Aucun résultat.</p>';
+      return;
+    }
+    $("list").innerHTML = rows.map(r =>
+      '<div class="row"><div class="meta"><div class="t">' + esc(r.t) +
+      '</div><div class="a">' + esc(r.a || "—") +
+      (r.d > 0 ? " · " + fmt(r.d) : "") +
+      '</div></div><button data-id="' + r.id + '">DEMANDER</button></div>').join("");
+  } catch (e) {
+    $("list").innerHTML = '<p class="hint">Recherche impossible — le DJ est-il en ligne ?</p>';
+  }
+}
+$("list").addEventListener("click", async ev => {
+  const b = ev.target.closest("button");
+  if (!b) return;
+  const name = $("name").value.trim();
+  if (!name) { toast("Entrez d'abord votre nom !", true); $("name").focus(); return; }
+  b.disabled = true;
+  try {
+    const rs = await fetch("/api/request", {
+      method: "POST",
+      body: new URLSearchParams({ id: b.dataset.id, singer: name, pw: PW }),
+    });
+    if (rs.status === 401) { gate(true); b.disabled = false; return; }
+    const j = await rs.json();
+    toast(j.msg || (rs.ok ? "Demande envoyée !" : "Échec de la demande"), !rs.ok);
+    if (!rs.ok) b.disabled = false;
+  } catch (e) {
+    toast("Impossible de joindre le DJ.", true);
+    b.disabled = false;
+  }
+});
+</script></body></html>)HTML";
+
 // ------------------------------------------------------------------- helpers
 
 static std::string jesc(const std::string& s) {
@@ -241,8 +396,8 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
     // ponytail: plenty for a barful of phones; bump if it ever queues.
     srv_->new_task_queue = [] { return new httplib::ThreadPool(1); };
 
-    srv_->Get("/", [](const httplib::Request&, httplib::Response& rs) {
-        rs.set_content(kPage, "text/html; charset=utf-8");
+    srv_->Get("/", [this](const httplib::Request&, httplib::Response& rs) {
+        rs.set_content(lang_.load() ? kPageFr : kPage, "text/html; charset=utf-8");
     });
 
     const auto authed = [this](const httplib::Request& rq) {
@@ -264,6 +419,7 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
     // audio/video whose title or filename says "karaoke". Plain music videos
     // and regular audio are the DJ's, not the crowd's.
     static const char kKaraokeOnly[] =
+        "IFNULL(hidden,0)=0 AND "
         "(type IN ('mp3g','karaoke_zip') OR (type IN ('audio','video') AND "
         "(fold(title) LIKE '%karaoke%' OR fold(path) LIKE '%karaoke%')))";
 
@@ -302,9 +458,11 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
     srv_->Post("/api/request", [this, authed, deny](const httplib::Request& rq,
                                                     httplib::Response& rs) {
         if (!authed(rq)) return deny(rs);
-        const auto reply = [&](int code, const char* msg) {
+        const bool fr = lang_.load() == 1;
+        const auto reply = [&](int code, const char* en, const char* frMsg) {
             rs.status = code;
-            rs.set_content(std::string("{\"msg\":\"") + msg + "\"}",
+            rs.set_content(std::string("{\"msg\":\"") + (fr ? frMsg : en) +
+                               "\"}",
                            "application/json");
         };
         const int64_t id = atoll(rq.get_param_value("id").c_str());
@@ -312,7 +470,9 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
         while (!singer.empty() && iswspace(singer.front())) singer.erase(0, 1);
         while (!singer.empty() && iswspace(singer.back())) singer.pop_back();
         if (singer.size() > 40) singer.resize(40);
-        if (id <= 0 || singer.empty()) return reply(400, "Missing name or song.");
+        if (id <= 0 || singer.empty())
+            return reply(400, "Missing name or song.",
+                         "Nom ou chanson manquant.");
 
         // Per-phone throttle: one request each 10 s keeps double-taps and
         // pranksters out without any account machinery.
@@ -320,7 +480,8 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
         const auto now = std::chrono::steady_clock::now();
         auto it = last.find(rq.remote_addr);
         if (it != last.end() && now - it->second < std::chrono::seconds(10))
-            return reply(429, "Easy! Wait a few seconds between requests.");
+            return reply(429, "Easy! Wait a few seconds between requests.",
+                         "Doucement ! Attendez quelques secondes.");
 
         Db::Stmt q; // same karaoke-only rule as search: a hand-crafted POST
                     // can't request a plain music video either
@@ -330,7 +491,9 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
             kKaraokeOnly;
         db_->prepare(q, sql.c_str());
         q.bind(1, id);
-        if (!q.step()) return reply(404, "That song can't be requested.");
+        if (!q.step())
+            return reply(404, "That song can't be requested.",
+                         "Cette chanson ne peut pas être demandée.");
         Match m;
         m.id = q.colInt(0);
         m.artist = wide(q.colText(1));
@@ -344,13 +507,17 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
             std::lock_guard<std::mutex> lk(mx_);
             for (const PhoneRequest& p : inbox_)
                 if (p.song.id == id && p.singer == singer)
-                    return reply(200, "Already requested — you're in!");
-            if (inbox_.size() >= 100) return reply(503, "Request list is full.");
+                    return reply(200, "Already requested — you're in!",
+                                 "Déjà demandé — c'est noté !");
+            if (inbox_.size() >= 100)
+                return reply(503, "Request list is full.",
+                             "La liste de demandes est pleine.");
             inbox_.push_back({singer, std::move(m)});
             pending_.store(true);
         }
         last[rq.remote_addr] = now;
-        reply(200, "Request sent! Watch the rotation.");
+        reply(200, "Request sent! Watch the rotation.",
+              "Demande envoyée ! Surveillez la rotation.");
     });
 
     port_ = 0;

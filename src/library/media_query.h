@@ -18,6 +18,8 @@ struct Match {
 // Playable library items matching term in title/artist/path; empty term = all.
 // pathPrefix restricts results to one folder subtree when non-empty.
 // sortCol: 0 artist, 1 title, 2 genre, 3 year, 4 bpm, 5 duration.
+// hidden: false = normal library (excluded rows filtered out); true = ONLY
+// the excluded rows (the restore view).
 std::vector<Match> searchMedia(Db& db, const std::wstring& term, int limit = 50,
                                const std::wstring& pathPrefix = L"", int sortCol = 0,
-                               bool sortAsc = true);
+                               bool sortAsc = true, bool hidden = false);

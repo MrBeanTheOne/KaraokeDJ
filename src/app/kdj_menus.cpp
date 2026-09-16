@@ -7,7 +7,7 @@ int showMenu(HWND hwnd, float scale, float cx, float cy,
     HMENU m = CreatePopupMenu();
     for (size_t i = 0; i < items.size(); ++i)
         AppendMenuW(m, MF_STRING | (int(i) == checked ? MF_CHECKED : 0), UINT(i + 1),
-                    items[i].c_str());
+                    uiTr(items[i]).c_str());
     POINT pt{LONG(cx * scale), LONG(cy * scale)}; // DIPs -> physical client
     ClientToScreen(hwnd, &pt);
     const int r = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hwnd,
@@ -28,7 +28,7 @@ int showTrackMenu(App& a, HWND hwnd, float cx, float cy,
     for (size_t i = 0; i < nS; ++i)
         AppendMenuW(sub, MF_STRING, UINT(1001 + i), singers[i].c_str());
     if (nS) AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(sub, MF_STRING, 1100, L"New singer…");
+    AppendMenuW(sub, MF_STRING, 1100, uiTr(L"New singer…").c_str());
     HMENU plSub = CreatePopupMenu();
     const size_t nP = (std::min)(a.playlists.size(), size_t(90));
     for (size_t i = 0; i < nP; ++i)
@@ -38,12 +38,12 @@ int showTrackMenu(App& a, HWND hwnd, float cx, float cy,
     for (size_t i = 0; i <= items.size(); ++i) {
         if (i == subAt) {
             AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(sub),
-                        L"Add to rotation");
+                        uiTr(L"Add to rotation").c_str());
             AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(plSub),
-                        L"Add to playlist");
+                        uiTr(L"Add to playlist").c_str());
         }
         if (i < items.size())
-            AppendMenuW(m, MF_STRING, UINT(i + 1), items[i].c_str());
+            AppendMenuW(m, MF_STRING, UINT(i + 1), uiTr(items[i]).c_str());
     }
     POINT pt{LONG(cx * a.uiScale), LONG(cy * a.uiScale)}; // DIPs -> physical
     ClientToScreen(hwnd, &pt);
@@ -248,9 +248,10 @@ void handleMenu(App& a, HWND hwnd) {
     } else if (req.kind == MenuReq::BrowserRow && req.index >= 0 &&
                req.index < int(a.results.size())) {
         const Match m = a.results[req.index];
-        const std::vector<std::wstring> items = {L"Mix now", L"Add to queue",
-                                                 L"Play next (queue front)",
-                                                 L"Edit tags…"};
+        const std::vector<std::wstring> items = {
+            L"Mix now", L"Add to queue", L"Play next (queue front)",
+            L"Edit tags…",
+            a.showHidden ? L"Restore to search" : L"Exclude from search"};
         const auto singers = rotationSingers(a);
         const int sel = showTrackMenu(a, hwnd, req.x, req.y, items, 4, singers);
         if (sel == 0) playNow(a, m);
@@ -275,6 +276,19 @@ void handleMenu(App& a, HWND hwnd) {
                 a.prompt = App::Prompt::TagEdit;
             } else {
                 a.status = L"not in the library (import it first)";
+            }
+        }
+        else if (sel == 4) { // broken version: hide it (or bring it back)
+            if (m.id) {
+                Db::Stmt q;
+                a.db.prepare(q,
+                             "UPDATE media_item SET hidden=?2 WHERE id=?1");
+                q.bind(1, m.id).bind(2, int64_t(a.showHidden ? 0 : 1));
+                q.step();
+                a.searchDirty = a.navDirty = true;
+                a.status = (a.showHidden ? uiTr(L"restored to search")
+                                         : uiTr(L"excluded from search")) +
+                           L": " + m.label;
             }
         }
         else if (sel >= 2000 && sel - 2000 < int(a.playlists.size())) {

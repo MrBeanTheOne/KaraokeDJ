@@ -277,6 +277,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         return 1;
     }
     a.web.setPassword(a.webPass); // set before listen: no unprotected window
+    a.web.setLanguage(a.lang);    // phone page follows the app language
     if (a.webOn && !a.web.start(a.dbPath)) a.webOn = false; // opt-in feature
     startUpdateCheck(a, false); // silent: only speaks up when newer exists
     startWatcher(a); // no-op unless the watch-folders setting is on

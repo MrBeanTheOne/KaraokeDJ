@@ -31,6 +31,8 @@ struct IdleScene {
     std::wstring title, message, nextUp;
     std::vector<std::wstring> singers; // "1. Alice — song" lines, few
     std::wstring qrUrl;                // "" hides the QR
+    std::wstring qrCaption = L"SCAN TO REQUEST A SONG"; // localized by engine
+    std::wstring singersHead = L"UP NEXT";
     IdleElem elems[6];
 };
 

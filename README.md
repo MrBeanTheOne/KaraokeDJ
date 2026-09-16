@@ -55,6 +55,8 @@ Settings) and points you at the download when one exists.
   queue.
 - **Tag editor**: right-click any track to fix artist/title/genre/year — in
   the library only, or written straight into the file's real tags.
+- **Exclude bad versions**: right-click hides a track from search and phone
+  requests; an Excluded view brings anything back.
 
 ### 🖼️ Design your waiting screen
 - Between songs the output shows a screen **you lay out in Settings**: a
@@ -65,6 +67,11 @@ Settings) and points you at the download when one exists.
   sizes, with a **live preview** right in Settings — and the layout is
   proportional, so a cheap 720p bar TV shows the same design as a 4K panel.
 - The whole designer collapses to one line when you're done.
+
+### 🌐 Bilingual
+- Full **English / French** interface — one click in Settings, applied
+  instantly everywhere including the waiting screen and the phones' request
+  page.
 
 ### 🎤 Running the night
 - **Singer rotation** with per-singer history — reorder by drag, right-click

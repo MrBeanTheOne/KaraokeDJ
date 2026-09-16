@@ -58,6 +58,8 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.idleTitle = wide(getSetting(a.db, "idle_title", "\xE2\x99\xAA  KARAOKE NIGHT"));
     a.scanTags = getSetting(a.db, "scan_tags", "1") == "1";
     a.autoGainOn = getSetting(a.db, "auto_gain", "1") == "1";
+    a.lang = getSetting(a.db, "lang", "0") == "1" ? 1 : 0;
+    uiSetLanguage(a.lang);
     a.watchOn = getSetting(a.db, "watch_folders", "0") == "1";
     a.webOn = getSetting(a.db, "web_on", "0") == "1"; // strictly opt-in
     a.webPass = wide(getSetting(a.db, "web_pass", ""));
@@ -128,6 +130,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "idle_title", utf8(a.idleTitle));
     setSetting(a.db, "scan_tags", a.scanTags ? "1" : "0");
     setSetting(a.db, "auto_gain", a.autoGainOn ? "1" : "0");
+    setSetting(a.db, "lang", a.lang ? "1" : "0");
     setSetting(a.db, "watch_folders", a.watchOn ? "1" : "0");
     setSetting(a.db, "web_on", a.webOn ? "1" : "0");
     setSetting(a.db, "web_pass", utf8(a.webPass));
@@ -202,8 +205,12 @@ void reloadNav(App& a) {
     {
         Db::Stmt c;
         a.db.prepare(c, "SELECT COUNT(*) FROM media_item WHERE type IN "
-                        "('audio','mp3g','video','karaoke_zip')");
+                        "('audio','mp3g','video','karaoke_zip') "
+                        "AND IFNULL(hidden,0)=0");
         a.libCount = c.step() ? int(c.colInt(0)) : 0;
+        Db::Stmt h;
+        a.db.prepare(h, "SELECT COUNT(*) FROM media_item WHERE hidden=1");
+        a.hiddenCount = h.step() ? int(h.colInt(0)) : 0;
     }
     a.singers.clear();
     const std::wstring sf = foldW(a.singerFilter);
@@ -315,7 +322,8 @@ void reloadNav(App& a) {
 
 void reloadBrowser(App& a) {
     if (a.nav == NavMode::Library) {
-        a.results = searchMedia(a.db, a.search, 200000, L"", a.sortCol, a.sortAsc);
+        a.results = searchMedia(a.db, a.search, 200000, L"", a.sortCol, a.sortAsc,
+                                a.showHidden);
     } else if (a.nav == NavMode::Folder) {
         a.results = searchMedia(a.db, a.search, 200000, a.navFolder, a.sortCol,
                                 a.sortAsc);

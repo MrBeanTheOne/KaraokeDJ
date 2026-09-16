@@ -328,7 +328,7 @@ void VideoWindow::drawIdle() {
     text(scene_.nextUp, scene_.elems[IdleScene::kNextUp], 0.034f,
          DWRITE_FONT_WEIGHT_NORMAL, 0x4FC3F7);
     if (!scene_.singers.empty()) {
-        std::wstring block = L"UP NEXT";
+        std::wstring block = scene_.singersHead;
         for (const std::wstring& ln : scene_.singers) block += L"\n" + ln;
         text(block, scene_.elems[IdleScene::kSingers], 0.030f,
              DWRITE_FONT_WEIGHT_NORMAL, 0xE8ECF1);
@@ -370,7 +370,7 @@ void VideoWindow::drawIdle() {
                 &qf))) {
             qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
             brush->SetColor(D2D1::ColorF(0xE8ECF1));
-            const std::wstring cap = L"SCAN TO REQUEST A SONG";
+            const std::wstring& cap = scene_.qrCaption;
             rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
                            D2D1::RectF(qx - 80, qy + qw + 6, qx + qw + 80,
                                        qy + qw + 6 + szQ * 1.5f),

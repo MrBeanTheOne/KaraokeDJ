@@ -142,7 +142,9 @@ struct App {
     std::set<std::wstring> expanded;       // folder tree expand state
     std::vector<std::pair<std::wstring, int>> flatFolders; // fallback, no roots
     std::vector<Match> results;
-    int libCount = 0; // playable library rows (sidebar "All tracks (n)")
+    int libCount = 0;  // playable library rows (sidebar "All tracks (n)")
+    int hiddenCount = 0; // excluded rows (sidebar "Excluded (n)", when > 0)
+    bool showHidden = false; // Library view lists ONLY excluded rows
     std::vector<SingerRow> singers;
     int64_t singingItemId = -1;
     std::deque<Match> queue;
@@ -195,6 +197,7 @@ struct App {
                          // 2 request password, 3 waiting-screen message
 
     // Settings view state
+    int lang = 0; // 0 English, 1 French (setting "lang"; applied via uiSetLanguage)
     int videoFit = 0;         // 0 fit (letterbox), 1 fill (crop), 2 stretch
     std::wstring idleTitle;   // waiting-screen headline (idle_title)
     // Waiting-screen designer: element layout, custom line, logo.
@@ -262,7 +265,7 @@ struct App {
     };
     enum class ConfirmAction {
         None, RemoveFolder, DeletePlaylist, CleanMissing, ClearRotation,
-        ClearHistory
+        ClearHistory, ClearQueue
     };
     Prompt prompt = Prompt::None;
     Match rotAddPending; // NewSinger: the track being added

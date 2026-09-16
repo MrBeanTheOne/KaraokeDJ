@@ -125,6 +125,9 @@ bool Db::open(const std::wstring& path) {
     // once here / at insert and searched as plain text. Kept in sync by the
     // scanner upsert and the tag editor.
     exec("ALTER TABLE media_item ADD COLUMN search_f TEXT;");
+    // hidden=1: excluded from search/browse/phone requests (broken versions);
+    // restorable from the sidebar's Excluded view.
+    exec("ALTER TABLE media_item ADD COLUMN hidden INTEGER DEFAULT 0;");
     exec("UPDATE media_item SET search_f = fold(COALESCE(title,'')) || "
          "char(10) || fold(COALESCE(artist,'')) || char(10) || fold(path) "
          "WHERE search_f IS NULL;");

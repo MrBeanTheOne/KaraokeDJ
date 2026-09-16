@@ -104,6 +104,20 @@ void Ui::endFrame() {
     }
 }
 
+float Ui::fitSize(const std::wstring& s, float maxW, float base) {
+    if (s.empty() || maxW <= 8) return base;
+    IDWriteTextLayout* tl = nullptr;
+    if (FAILED(dw_->CreateTextLayout(s.c_str(), UINT32(s.size()),
+                                     fmt(base, true, 1), 1e6f, 100.f, &tl)) ||
+        !tl)
+        return base;
+    DWRITE_TEXT_METRICS mtr{};
+    tl->GetMetrics(&mtr);
+    tl->Release();
+    if (mtr.width <= maxW || mtr.width <= 0) return base;
+    return (std::max)(8.f, base * maxW / mtr.width - 0.5f);
+}
+
 IDWriteTextFormat* Ui::fmt(float size, bool bold, int align) {
     const int key = int(size) * 16 + (bold ? 8 : 0) + align;
     auto it = fmts_.find(key);
@@ -139,8 +153,9 @@ void Ui::frameRect(const D2D1_RECT_F& r, D2D1_COLOR_F c, float rad, float w) {
 void Ui::text(const D2D1_RECT_F& r, const std::wstring& s, float size, D2D1_COLOR_F c,
               int align, bool bold) {
     if (!rt || s.empty()) return;
+    const std::wstring t = uiLanguage() ? uiTr(s) : s;
     brush_->SetColor(c);
-    rt->DrawTextW(s.c_str(), UINT32(s.size()), fmt(size, bold, align), r, brush_,
+    rt->DrawTextW(t.c_str(), UINT32(t.size()), fmt(size, bold, align), r, brush_,
                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
 }
 
@@ -204,17 +219,19 @@ bool Ui::button(int id, const D2D1_RECT_F& r, const std::wstring& label,
     const bool over = hit(r, in.mx, in.my);
     const float h = hover(id, over);
     const bool held = in.down && hit(r, in.pressX, in.pressY);
+    const std::wstring lt = uiLanguage() ? uiTr(label) : label;
+    const float sz = fitSize(lt, r.right - r.left - 12, 13);
     if (filled) {
         D2D1_COLOR_F bg = accent;
         if (held) bg = mix(accent, col(0x000000), 0.22f);
         else bg = mix(accent, col(0xFFFFFF), h * 0.12f);
         rect(r, bg, 7);
-        text(r, label, 13, col(0x0B0E12), 1, true);
+        text(r, lt, sz, col(0x0B0E12), 1, true);
     } else {
         rect(r, mix(kBtnBg, kBtnHover, h), 7);
         frameRect(r, mix(kBtnBorder, accent, h * 0.8f), 7);
         if (held) rect(r, col(0x000000, 0.18f), 7);
-        text(r, label, 13, mix(kTextDim, kText, h), 1, true);
+        text(r, lt, sz, mix(kTextDim, kText, h), 1, true);
     }
     return in.pressed && hit(r, in.pressX, in.pressY);
 }
@@ -227,7 +244,10 @@ bool Ui::toggle(int id, const D2D1_RECT_F& r, const std::wstring& label, bool on
     D2D1_COLOR_F onBg = D2D1_COLOR_F{accent.r, accent.g, accent.b, 0.20f + h * 0.08f};
     rect(r, on ? onBg : offBg, 7);
     frameRect(r, on ? accent : mix(kBtnBorder, accent, h * 0.6f), 7);
-    text(r, label, 13, on ? accent : mix(kTextDim, kText, h), 1, true);
+    const std::wstring lt = uiLanguage() ? uiTr(label) : label;
+    text(r, lt, fitSize(lt, r.right - r.left - 12, 13), on ? accent
+                                                           : mix(kTextDim, kText, h),
+         1, true);
     return in.pressed && hit(r, in.pressX, in.pressY);
 }
 

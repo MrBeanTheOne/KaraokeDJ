@@ -285,6 +285,11 @@ void commitPrompt(App& a) {
             a.navDirty = true;
             a.status = L"rotation cleared — ready for a new night";
             break;
+        case App::ConfirmAction::ClearQueue:
+            a.queue.clear();
+            a.selQueue = -1;
+            a.status = L"queue cleared";
+            break;
         case App::ConfirmAction::ClearHistory:
             a.db.exec("DELETE FROM play_history WHERE started_at > "
                       "strftime('%s','now') - 43200");
@@ -344,11 +349,14 @@ void presentVideo(App& a) {
     const float t = a.mixer.fadeT.load();
     const int act = a.mixer.activeDeck.load();
     std::wstring nextUp;
+    const std::wstring nextUpTag = uiTr(L"NEXT UP:") + L"  ";
     for (int d = 0; d < 2; ++d)
-        if (a.autoCued[d] && !a.label[d].empty()) nextUp = L"NEXT UP:  " + a.label[d];
+        if (a.autoCued[d] && !a.label[d].empty()) nextUp = nextUpTag + a.label[d];
     if (nextUp.empty() && !a.queue.empty())
-        nextUp = L"NEXT UP:  " + a.queue.front().label;
+        nextUp = nextUpTag + a.queue.front().label;
     IdleScene sc; // waiting screen (plan §6), arranged in Settings
+    sc.qrCaption = uiTr(L"SCAN TO REQUEST A SONG");
+    sc.singersHead = uiTr(L"UP NEXT");
     sc.title = a.idleTitle;
     sc.message = a.idleSub;
     sc.nextUp = nextUp;

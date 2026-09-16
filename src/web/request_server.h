@@ -30,6 +30,8 @@ public:
     // Optional access password ("" = open). Applies live; phones that sent
     // the right one keep it in localStorage, so they enter it exactly once.
     void setPassword(const std::wstring& pass);
+    // 0 = English page, 1 = French page (follows the app language).
+    void setLanguage(int lang) { lang_.store(lang); }
     bool running() const { return running_.load(); }
     std::wstring url() const; // http://<lan-ip>:<port>/  ("" if not running)
 
@@ -47,6 +49,7 @@ private:
     std::thread th_;
     std::atomic<bool> running_{false};
     std::atomic<bool> pending_{false};
+    std::atomic<int> lang_{0};
     int port_ = 0;
 
     std::mutex mx_;
