@@ -8,3 +8,4 @@ tests/media-fixtures/
 KaraokeDJ-*-win64.exe
 *.db.backup
 input/
+redist/

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(karaoke-dj VERSION 1.0.2 LANGUAGES C CXX)
+project(karaoke-dj VERSION 1.0.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,6 +83,11 @@ target_include_directories(test_core PRIVATE src)
 # desktop shortcuts, standard uninstaller. User data (%APPDATA%\KaraokeDJ) is
 # created at runtime and never touched by the uninstaller.
 install(TARGETS karaoke_dj librarian RUNTIME DESTINATION .)
+# Bundled tools (redist/ is not committed — populate it before packaging):
+# yt-dlp for YouTube playback, ffmpeg so yt-dlp can merge best-quality
+# streams. OPTIONAL: building without them still works, they just aren't
+# packaged.
+install(PROGRAMS redist/yt-dlp.exe redist/ffmpeg.exe DESTINATION . OPTIONAL)
 
 set(CPACK_GENERATOR NSIS)
 set(CPACK_PACKAGE_NAME "Karaoke DJ")
@@ -103,4 +108,5 @@ set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/assets/karaoke_dj.ico")
 set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_NSIS_MODIFY_PATH OFF)
+set(CPACK_NSIS_COMPRESSOR "/SOLID lzma") # ffmpeg squeezes ~3x
 include(CPack)
