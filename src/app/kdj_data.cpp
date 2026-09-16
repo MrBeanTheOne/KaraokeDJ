@@ -321,6 +321,10 @@ void reloadNav(App& a) {
 }
 
 void reloadBrowser(App& a) {
+    const int64_t prevSelId =
+        a.selLib >= 0 && a.selLib < int(a.results.size())
+            ? a.results[a.selLib].id
+            : 0;
     if (a.nav == NavMode::Library) {
         a.results = searchMedia(a.db, a.search, 200000, L"", a.sortCol, a.sortAsc,
                                 a.showHidden);
@@ -347,10 +351,20 @@ void reloadBrowser(App& a) {
             a.results.push_back(std::move(m));
         }
     }
+    // Background refreshes must not steal the operator's place: keep the
+    // selected track (by id) and the scroll offset, just clamped.
     a.selLib = a.results.empty() ? -1 : 0;
+    if (prevSelId) {
+        for (size_t i = 0; i < a.results.size(); ++i)
+            if (a.results[i].id == prevSelId) {
+                a.selLib = int(i);
+                break;
+            }
+    }
     a.selRows.clear();
-    if (a.selLib >= 0) a.selRows.insert(0);
-    a.libScroll = 0;
+    if (a.selLib >= 0) a.selRows.insert(a.selLib);
+    a.libScroll = std::clamp(a.libScroll, 0.f,
+                             (std::max)(0.f, float(a.results.size()) - 1));
     a.searchDirty = false;
 }
 

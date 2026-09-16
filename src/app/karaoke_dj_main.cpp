@@ -325,6 +325,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                 if (tgt == Focus::Search) {
                     a.searchDirty = true;
                     a.searchEditAt = Clock::now(); // debounced reload
+                    a.libScroll = 0;               // new search: back to top
+                    a.selLib = -1;
                 }
                 if (tgt == Focus::SingerName) a.navDirty = true;
             }

@@ -450,6 +450,8 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
                     row.mode == NavMode::Library && row.folder == L"##hidden";
                 a.focus = Focus::None;
                 a.searchDirty = true;
+                a.libScroll = 0; // new view: back to top
+                a.selLib = -1;
             }
         }
         ui.text(rc(rr.left + indent + (row.expandable ? 16 : 4), y,
@@ -1063,6 +1065,7 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
                 if (a.sortCol == kColSort[id]) a.sortAsc = !a.sortAsc;
                 else { a.sortCol = kColSort[id]; a.sortAsc = true; }
                 a.searchDirty = true;
+                a.libScroll = 0; // new order: back to top
             }
         }
         ui.rect(rc(listLeft, hy + 19, listRight - listLeft, 1), cBorder, 0);
