@@ -82,6 +82,11 @@ Settings) and points you at the download when one exists.
 - **Audio device recovery**: pulling the USB interface mid-song recovers
   without a restart.
 - **Second-screen video output** with letterbox / fill / stretch fit modes.
+- **Keyboard shortcuts** for gig ergonomics: `Space` pause/resume the live
+  deck, `Ctrl+N` next singer, `↑`/`↓` walk the track list, `Enter` queue,
+  `PgDn` skip, `Del` remove from queue, `Esc` back out.
+- **Profile transfer**: export settings, playlists, markers, tags and BPM to
+  a single file and import it on another machine — set up once, run anywhere.
 
 ### 📱 Phone requests <sub>(optional, off by default)</sub>
 

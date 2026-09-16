@@ -32,6 +32,8 @@ struct UiInput {
     float wheel = 0; // rows (+ = up)
     std::vector<wchar_t> typed;
     bool enter = false, del = false, pgdn = false, pgup = false;
+    bool pauseKey = false, esc = false; // gig shortcuts (main window)
+    int navKey = 0;                     // browser arrows: -1 up, +1 down
 };
 
 inline D2D1_COLOR_F col(uint32_t rgb, float a = 1.f) {

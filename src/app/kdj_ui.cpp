@@ -686,6 +686,14 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
             L"new/changed files import themselves shortly after they appear",
             10, cDim, 0, false);
     y += 40;
+    if (ui.button(609, rc(x, y, 220, 28), L"EXPORT PROFILE…", cAccent))
+        a.menu = {MenuReq::None, -5};
+    if (ui.button(610, rc(x + 230, y, 220, 28), L"IMPORT PROFILE…", cAccent))
+        a.menu = {MenuReq::None, -6};
+    ui.text(rc(x + 460, y, w - 460, 28),
+            L"settings, playlists, markers — move them to the laptop", 10,
+            cDim, 0, false);
+    y += 40;
     if (ui.button(602, rc(x, y, 220, 28), L"CLEAN MISSING FILES", cRed))
         a.menu = {MenuReq::CleanMissing, -1, 0, 0}; // confirm runs after the frame
     ui.text(rc(x + 230, y, w - 230, 28),

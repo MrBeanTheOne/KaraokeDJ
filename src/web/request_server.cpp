@@ -54,6 +54,10 @@ static const char kPage[] = R"HTML(<!doctype html>
   #toast.err { background: #58151c; color: #ffb4ab; }
   #toast.show { opacity: 1; }
   .hint { color: #94949d; font-size: 13px; text-align: center; margin-top: 26px; }
+  #mystat { display: none; margin: 12px 0 2px; padding: 12px; border-radius: 10px;
+            background: #1a2f1f; border: 1px solid #2e5d3a; color: #b9f6ca;
+            font-weight: 600; }
+  #mystat.up { background: #3a1114; border-color: #d22c36; color: #ffd2d6; }
   #gate { position: fixed; inset: 0; z-index: 9; background: #0a0a0c;
           padding: 15vh 24px 0; }
   #gate button { width: 100%; margin-top: 14px; padding: 13px; }
@@ -63,6 +67,7 @@ static const char kPage[] = R"HTML(<!doctype html>
 <p class="sub">Search a song, tap REQUEST — the DJ adds you to the rotation.</p>
 <label>YOUR NAME</label>
 <input id="name" maxlength="40" placeholder="Who's singing?" autocomplete="off">
+<div id="mystat"></div>
 <label>FIND A SONG</label>
 <input id="q" placeholder="Title or artist…" autocomplete="off">
 <div id="list"><p class="hint">Type at least 2 letters to search.</p></div>
@@ -104,6 +109,27 @@ try { $("name").value = localStorage.getItem("kdj_name") || ""; } catch (e) {}
 $("name").addEventListener("input", () => {
   try { localStorage.setItem("kdj_name", $("name").value); } catch (e) {}
 });
+async function myStatus() {
+  const name = $("name").value.trim();
+  const el = $("mystat");
+  if (!name) { el.style.display = "none"; return; }
+  try {
+    const rs = await fetch("/api/mystatus?singer=" + encodeURIComponent(name) +
+                           "&pw=" + encodeURIComponent(PW));
+    if (!rs.ok) { el.style.display = "none"; return; }
+    const rows = await rs.json();
+    if (!rows.length) { el.style.display = "none"; return; }
+    const r = rows[0];
+    el.className = r.s ? "up" : "";
+    el.textContent = r.s ? "\ud83c\udfa4 You're up! \u2014 " + r.t
+                         : "#" + r.p + " in the rotation \u2014 " + r.t +
+                           (rows.length > 1 ? "  (+" + (rows.length - 1) +
+                                              " more)" : "");
+    el.style.display = "block";
+  } catch (e) { el.style.display = "none"; }
+}
+myStatus();
+setInterval(myStatus, 15000);
 let timer = 0, toastTimer = 0;
 function toast(msg, err) {
   const t = $("toast");
@@ -163,6 +189,7 @@ $("list").addEventListener("click", async ev => {
     const j = await rs.json();
     toast(j.msg || (rs.ok ? "Request sent!" : "Request failed"), !rs.ok);
     if (!rs.ok) b.disabled = false;
+    if (rs.ok) setTimeout(myStatus, 4000);
   } catch (e) {
     toast("Couldn't reach the DJ app.", true);
     b.disabled = false;
@@ -209,6 +236,10 @@ static const char kPageFr[] = R"HTML(<!doctype html>
   #toast.err { background: #58151c; color: #ffb4ab; }
   #toast.show { opacity: 1; }
   .hint { color: #94949d; font-size: 13px; text-align: center; margin-top: 26px; }
+  #mystat { display: none; margin: 12px 0 2px; padding: 12px; border-radius: 10px;
+            background: #1a2f1f; border: 1px solid #2e5d3a; color: #b9f6ca;
+            font-weight: 600; }
+  #mystat.up { background: #3a1114; border-color: #d22c36; color: #ffd2d6; }
   #gate { position: fixed; inset: 0; z-index: 9; background: #0a0a0c;
           padding: 15vh 24px 0; }
   #gate button { width: 100%; margin-top: 14px; padding: 13px; }
@@ -218,6 +249,7 @@ static const char kPageFr[] = R"HTML(<!doctype html>
 <p class="sub">Cherchez une chanson, touchez DEMANDER — le DJ vous ajoute à la rotation.</p>
 <label>VOTRE NOM</label>
 <input id="name" maxlength="40" placeholder="Qui chante ?" autocomplete="off">
+<div id="mystat"></div>
 <label>TROUVER UNE CHANSON</label>
 <input id="q" placeholder="Titre ou artiste…" autocomplete="off">
 <div id="list"><p class="hint">Tapez au moins 2 lettres pour chercher.</p></div>
@@ -259,6 +291,27 @@ try { $("name").value = localStorage.getItem("kdj_name") || ""; } catch (e) {}
 $("name").addEventListener("input", () => {
   try { localStorage.setItem("kdj_name", $("name").value); } catch (e) {}
 });
+async function myStatus() {
+  const name = $("name").value.trim();
+  const el = $("mystat");
+  if (!name) { el.style.display = "none"; return; }
+  try {
+    const rs = await fetch("/api/mystatus?singer=" + encodeURIComponent(name) +
+                           "&pw=" + encodeURIComponent(PW));
+    if (!rs.ok) { el.style.display = "none"; return; }
+    const rows = await rs.json();
+    if (!rows.length) { el.style.display = "none"; return; }
+    const r = rows[0];
+    el.className = r.s ? "up" : "";
+    el.textContent = r.s ? "\ud83c\udfa4 C'est \u00e0 vous ! \u2014 " + r.t
+                         : "#" + r.p + " dans la rotation \u2014 " + r.t +
+                           (rows.length > 1 ? "  (+" + (rows.length - 1) +
+                                              " autres)" : "");
+    el.style.display = "block";
+  } catch (e) { el.style.display = "none"; }
+}
+myStatus();
+setInterval(myStatus, 15000);
 let timer = 0, toastTimer = 0;
 function toast(msg, err) {
   const t = $("toast");
@@ -318,6 +371,7 @@ $("list").addEventListener("click", async ev => {
     const j = await rs.json();
     toast(j.msg || (rs.ok ? "Demande envoyée !" : "Échec de la demande"), !rs.ok);
     if (!rs.ok) b.disabled = false;
+    if (rs.ok) setTimeout(myStatus, 4000);
   } catch (e) {
     toast("Impossible de joindre le DJ.", true);
     b.disabled = false;
@@ -449,6 +503,37 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
                 j += head;
                 j += "\"t\":\"" + jesc(utf8(title)) + "\",";
                 j += "\"a\":\"" + jesc(utf8(artist)) + "\"}";
+                first = false;
+            }
+        }
+        rs.set_content(j + "]", "application/json");
+    });
+
+    // Live rotation position for one singer: [{p:4,s:0,t:"song"},...] in
+    // rotation order (s:1 = singing right now). Name matched accent-folded.
+    srv_->Get("/api/mystatus", [this, authed, deny](const httplib::Request& rq,
+                                                    httplib::Response& rs) {
+        if (!authed(rq)) return deny(rs);
+        const std::wstring who = foldW(wide(rq.get_param_value("singer")));
+        std::string j = "[";
+        if (!who.empty()) {
+            Db::Stmt q;
+            db_->prepare(q, "SELECT sq.singer, sq.status, m.title "
+                            "FROM singer_queue_item sq "
+                            "JOIN media_item m ON m.id = sq.media_id "
+                            "WHERE sq.status IN ('waiting','singing') "
+                            "ORDER BY sq.position");
+            int pos = 0;
+            bool first = true;
+            while (q.step()) {
+                ++pos;
+                if (foldW(wide(q.colText(0))) != who) continue;
+                const bool now = q.colText(1) == std::string("singing");
+                char head[48];
+                snprintf(head, 48, "%s{\"p\":%d,\"s\":%d,", first ? "" : ",",
+                         pos, now ? 1 : 0);
+                j += head;
+                j += "\"t\":\"" + jesc(q.colText(2)) + "\"}";
                 first = false;
             }
         }

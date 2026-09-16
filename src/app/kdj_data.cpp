@@ -723,6 +723,110 @@ std::wstring pickFile(HWND owner) {
     return out;
 }
 
+// Everything worth moving between machines: settings (minus this machine's
+// window/audio/monitor), per-track cues/bpm/tags/hidden keyed by PATH (the
+// external drive keeps its paths), playlists by name. One .kdjprofile file =
+// a SQLite database, so no hand-rolled serialization.
+bool exportProfile(App& a, const std::wstring& file) {
+    DeleteFileW(file.c_str()); // a save dialog already confirmed overwrite
+    Db::Stmt at;
+    a.db.prepare(at, "ATTACH ?1 AS exp");
+    at.bind(1, utf8(file));
+    at.step(); // DDL: no rows; failure surfaces in the execs below
+    const bool ok =
+        a.db.exec("CREATE TABLE exp.settings AS SELECT key, value FROM settings "
+                  "WHERE key NOT IN ('win_w','win_h','audio_device',"
+                  "'video_monitor','snap_blob','snap_clean');") &&
+        a.db.exec("CREATE TABLE exp.media AS SELECT path, artist, title, genre, "
+                  "year, bpm, cue_in_ms, cue_out_ms, IFNULL(hidden,0) hidden "
+                  "FROM media_item;") &&
+        a.db.exec("CREATE TABLE exp.pl AS SELECT id, name FROM playlist;") &&
+        a.db.exec("CREATE TABLE exp.pli AS SELECT pi.playlist_id, m.path, "
+                  "pi.position FROM playlist_item pi "
+                  "JOIN media_item m ON m.id = pi.media_id;");
+    a.db.exec("DETACH exp;");
+    return ok;
+}
+
+bool importProfile(App& a, const std::wstring& file) {
+    Db::Stmt at;
+    a.db.prepare(at, "ATTACH ?1 AS imp");
+    at.bind(1, utf8(file));
+    at.step();
+    // A profile is a sqlite db with these tables; anything else fails here.
+    Db::Stmt chk;
+    if (!a.db.prepare(chk, "SELECT COUNT(*) FROM imp.media") || !chk.step()) {
+        a.db.exec("DETACH imp;");
+        return false;
+    }
+    const bool ok =
+        a.db.exec("INSERT OR REPLACE INTO settings SELECT key, value "
+                  "FROM imp.settings;") &&
+        a.db.exec("UPDATE media_item SET "
+                  "(artist,title,genre,year,bpm,cue_in_ms,cue_out_ms,hidden) = "
+                  "(SELECT im.artist, im.title, im.genre, im.year, im.bpm, "
+                  "im.cue_in_ms, im.cue_out_ms, im.hidden FROM imp.media im "
+                  "WHERE im.path = media_item.path), "
+                  "search_f = NULL "
+                  "WHERE path IN (SELECT path FROM imp.media);") &&
+        // refold whatever the import touched (same rule as the migration)
+        a.db.exec("UPDATE media_item SET search_f = fold(COALESCE(title,'')) || "
+                  "char(10) || fold(COALESCE(artist,'')) || char(10) || "
+                  "fold(path) WHERE search_f IS NULL;") &&
+        a.db.exec("INSERT INTO playlist(name) SELECT name FROM imp.pl "
+                  "WHERE name NOT IN (SELECT name FROM playlist);") &&
+        a.db.exec("DELETE FROM playlist_item WHERE playlist_id IN "
+                  "(SELECT p.id FROM playlist p JOIN imp.pl ip "
+                  "ON ip.name = p.name);") &&
+        a.db.exec("INSERT INTO playlist_item(playlist_id, media_id, position) "
+                  "SELECT p.id, m.id, ipi.position FROM imp.pli ipi "
+                  "JOIN imp.pl ip ON ip.id = ipi.playlist_id "
+                  "JOIN playlist p ON p.name = ip.name "
+                  "JOIN media_item m ON m.path = ipi.path;");
+    a.db.exec("DETACH imp;");
+    if (ok) { // re-apply the imported settings to the live app
+        UINT dw = 0, dh = 0;
+        loadSettings(a, dw, dh);
+        a.web.setPassword(a.webPass);
+        a.web.setLanguage(a.lang);
+        startWatcher(a);
+        a.navDirty = a.searchDirty = true;
+    }
+    return ok;
+}
+
+std::wstring pickProfile(HWND owner, bool save) {
+    IFileDialog* fd = nullptr;
+    const HRESULT hr =
+        save ? CoCreateInstance(__uuidof(FileSaveDialog), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&fd))
+             : CoCreateInstance(__uuidof(FileOpenDialog), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&fd));
+    if (FAILED(hr)) return L"";
+    static const COMDLG_FILTERSPEC kProf[] = {
+        {L"Karaoke DJ profile", L"*.kdjprofile"}};
+    fd->SetFileTypes(1, kProf);
+    fd->SetDefaultExtension(L"kdjprofile");
+    if (save) fd->SetFileName(L"karaoke-dj");
+    DWORD opts = 0;
+    fd->GetOptions(&opts);
+    fd->SetOptions(opts | FOS_FORCEFILESYSTEM);
+    std::wstring out;
+    if (SUCCEEDED(fd->Show(owner))) {
+        IShellItem* it = nullptr;
+        if (SUCCEEDED(fd->GetResult(&it))) {
+            PWSTR p = nullptr;
+            if (SUCCEEDED(it->GetDisplayName(SIGDN_FILESYSPATH, &p))) {
+                out = p;
+                CoTaskMemFree(p);
+            }
+            it->Release();
+        }
+    }
+    fd->Release();
+    return out;
+}
+
 std::wstring pickFolder(HWND owner) {
     IFileDialog* fd = nullptr;
     if (FAILED(CoCreateInstance(__uuidof(FileOpenDialog), nullptr, CLSCTX_ALL,

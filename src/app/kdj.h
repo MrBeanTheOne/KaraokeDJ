@@ -401,6 +401,9 @@ void startBpmAnalysis(App& a);
 void startUpdateCheck(App& a, bool manual);
 std::wstring pickFolder(HWND owner);
 std::wstring pickFile(HWND owner); // image picker (waiting-screen logo)
+std::wstring pickProfile(HWND owner, bool save); // .kdjprofile open/save
+bool exportProfile(App& a, const std::wstring& file);
+bool importProfile(App& a, const std::wstring& file);
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
 std::wstring youtubeCacheDir();
 void startYoutube(App& a, std::wstring url);

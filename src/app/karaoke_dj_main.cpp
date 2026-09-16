@@ -152,12 +152,24 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 CloseClipboard();
             }
         } else if (wp == L'\r') g_pending.enter = true;
+        else if (wp == L' ' && g_app && g_app->prompt == App::Prompt::None &&
+                 g_app->focus == Focus::None)
+            g_pending.pauseKey = true; // space only types inside a box
         else if (wp >= 32 || wp == 8) g_pending.typed.push_back(wchar_t(wp));
         return 0;
     case WM_KEYDOWN:
         if (wp == VK_DELETE) g_pending.del = true;
         else if (wp == VK_NEXT) g_pending.pgdn = true;
         else if (wp == VK_PRIOR) g_pending.pgup = true;
+        else if (wp == VK_UP) g_pending.navKey = -1;
+        else if (wp == VK_DOWN) g_pending.navKey = 1;
+        else if (wp == VK_ESCAPE) g_pending.esc = true;
+        else if (wp == 'N' && (GetKeyState(VK_CONTROL) & 0x8000) && g_app &&
+                 g_app->prompt == App::Prompt::None) {
+            // Ctrl+N: next singer (the char handler sees ^N as code 14)
+            for (const auto& s : g_app->singers)
+                if (s.status == "waiting") { singNow(*g_app, s); break; }
+        }
         return 0;
     case WM_DROPFILES: {
         HDROP hd = reinterpret_cast<HDROP>(wp);
@@ -366,7 +378,36 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             const int act = a.mixer.activeDeck.load();
             if (act >= 0) seekFrac(a, act, 0.f);
         }
+        if (g_pending.pauseKey && a.prompt == App::Prompt::None) {
+            const int act = a.mixer.activeDeck.load(); // space = pause/resume
+            if (act >= 0)
+                a.decks[act]->paused.store(!a.decks[act]->paused.load());
+        }
+        if (g_pending.navKey && a.prompt == App::Prompt::None &&
+            a.nav != NavMode::Singers && a.nav != NavMode::History &&
+            !a.results.empty()) { // arrows walk the browser selection
+            a.selLib = std::clamp(a.selLib + g_pending.navKey, 0,
+                                  int(a.results.size()) - 1);
+            a.selRows.clear();
+            a.selRows.insert(a.selLib);
+            const float vis = // keep the selection on screen
+                (a.rcBrowserList.bottom - a.rcBrowserList.top) / 26.f;
+            if (float(a.selLib) < a.libScroll) a.libScroll = float(a.selLib);
+            else if (float(a.selLib) > a.libScroll + vis - 1)
+                a.libScroll = float(a.selLib) - vis + 1;
+        }
+        if (g_pending.esc) { // Esc: close modal, else unfocus, else clear search
+            if (a.prompt != App::Prompt::None) a.prompt = App::Prompt::None;
+            else if (a.focus != Focus::None) a.focus = Focus::None;
+            else if (!a.search.empty()) {
+                a.search.clear();
+                a.searchDirty = true;
+                a.libScroll = 0;
+            }
+        }
         g_pending.enter = g_pending.del = g_pending.pgdn = g_pending.pgup = false;
+        g_pending.pauseKey = g_pending.esc = false;
+        g_pending.navKey = 0;
         if (a.pickDone.exchange(false)) {
             if (a.pickThread.joinable()) a.pickThread.join();
             if (!a.pickResult.empty()) {
@@ -380,6 +421,16 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                         a.status = L"waiting-screen logo set";
                     }
                     setSetting(a.db, "idle_logo", utf8(a.idleLogoPath));
+                } else if (a.pickKind == 3) { // export profile
+                    a.status = exportProfile(a, a.pickResult)
+                                   ? L"profile exported: " +
+                                         leafName(a.pickResult)
+                                   : L"profile export failed";
+                } else if (a.pickKind == 4) { // import profile
+                    a.status = importProfile(a, a.pickResult)
+                                   ? L"profile imported — settings and "
+                                     L"playlists applied"
+                                   : L"that file is not a Karaoke DJ profile";
                 } else if (a.pickKind == 2) { // waiting-screen background
                     a.idleBgPath = a.pickResult;
                     a.idleBgLoaded = loadImageFile(a.idleBgPath, a.idleBg, 1920);
