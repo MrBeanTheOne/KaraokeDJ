@@ -234,13 +234,20 @@ struct App {
 
     // In-app modal: text input (new singer / new playlist) or a themed
     // CONFIRM box (all destructive actions — no native MessageBox).
-    enum class Prompt { None, NewSinger, NewPlaylist, Confirm, Columns, Requests };
+    enum class Prompt {
+        None, NewSinger, NewPlaylist, Confirm, Columns, Requests, TagEdit
+    };
     enum class ConfirmAction {
         None, RemoveFolder, DeletePlaylist, CleanMissing, ClearRotation,
         ClearHistory
     };
     Prompt prompt = Prompt::None;
     Match rotAddPending; // NewSinger: the track being added
+    // Tag editor (browser right-click): edits library metadata; optionally
+    // writes the tags into the file itself via its shell property handler.
+    Match tagEditItem;
+    std::wstring tagField[4]; // artist, title, genre, year (as text)
+    int tagFocus = 1;
     std::wstring promptText;
     ConfirmAction confirmAction = ConfirmAction::None;
     std::wstring confirmTitle, confirmL1, confirmL2; // two body lines
@@ -337,6 +344,10 @@ void singNow(App& a, const SingerRow& row);
 void addToRotationAs(App& a, const Match& m, const std::wstring& singer);
 std::vector<std::wstring> rotationSingers(App& a);
 void commitPrompt(App& a);
+void applyTagEdit(App& a, bool toFile);
+bool writeFileTags(const std::wstring& path, const std::wstring& artist,
+                   const std::wstring& title, const std::wstring& genre,
+                   int year);
 void presentVideo(App& a);
 void engineTick(App& a);
 

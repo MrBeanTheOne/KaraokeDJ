@@ -1480,23 +1480,53 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         const bool singer = a.prompt == App::Prompt::NewSinger;
         const bool columns = a.prompt == App::Prompt::Columns;
         const bool reqs = a.prompt == App::Prompt::Requests;
+        const bool tags = a.prompt == App::Prompt::TagEdit;
         const int nReq = (std::min)(9, int(a.reqInbox.size()));
         ui.rect(rc(0, 0, W, H), col(0x000000, 0.55f), 0);
-        const float pw = reqs ? 640.f : columns ? 380.f : confirm ? 560.f : 440.f,
-                    ph = reqs      ? 96.f + (std::max)(nReq, 1) * 32.f
+        const float pw = tags      ? 560.f
+                         : reqs    ? 640.f
+                         : columns ? 380.f
+                         : confirm ? 560.f
+                                   : 440.f,
+                    ph = tags      ? 232.f
+                         : reqs    ? 96.f + (std::max)(nReq, 1) * 32.f
                          : columns ? 292.f
                                    : 132.f;
         const D2D1_RECT_F p = rc((W - pw) / 2, (H - ph) / 2, pw, ph);
         ui.rect(p, cPanel, 10);
         ui.frameRect(p, confirm ? cRed : cAccent, 10);
         ui.text(rc(p.left + 16, p.top + 10, pw - 32, 16),
-                reqs      ? L"PHONE REQUESTS"
+                tags      ? L"EDIT TAGS — " + leafName(a.tagEditItem.path)
+                : reqs    ? L"PHONE REQUESTS"
                 : columns ? L"BROWSER COLUMNS"
                 : confirm ? a.confirmTitle
                 : singer  ? L"ADD TO ROTATION — NEW SINGER"
                           : L"NEW PLAYLIST",
                 11, confirm ? cRed : cAccent, 0, true);
-        if (reqs) {
+        if (tags) {
+            static const wchar_t* fl[4] = {L"Artist", L"Title", L"Genre",
+                                           L"Year"};
+            float cy2 = p.top + 32;
+            for (int k = 0; k < 4; ++k) {
+                ui.text(rc(p.left + 16, cy2, 70, 26), fl[k], 12, cDim, 0, false);
+                const D2D1_RECT_F fb = rc(p.left + 92, cy2, pw - 108, 26);
+                ui.rect(fb, cInset, 6);
+                ui.frameRect(fb, a.tagFocus == k ? cAccent : cBorder, 5);
+                ui.text(rc(fb.left + 8, fb.top, fb.right - fb.left - 16, 26),
+                        a.tagField[k] +
+                            (a.tagFocus == k && caretOn() ? L"▏" : L""),
+                        12, cText, 0, false);
+                if (ui.in.pressed && hit(fb, ui.in.pressX, ui.in.pressY))
+                    a.tagFocus = k;
+                cy2 += 34;
+            }
+            if (ui.button(502, rc(p.left + 16, p.bottom - 40, 130, 28),
+                          L"SAVE", cGreen, true))
+                applyTagEdit(a, false);
+            if (ui.button(503, rc(p.left + 154, p.bottom - 40, 190, 28),
+                          L"SAVE + WRITE FILE", cAccent))
+                applyTagEdit(a, true);
+        } else if (reqs) {
             float cy2 = p.top + 34;
             if (a.reqInbox.empty())
                 ui.text(rc(p.left + 16, cy2, pw - 32, 26),

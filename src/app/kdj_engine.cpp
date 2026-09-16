@@ -1,5 +1,9 @@
 #include "app/kdj.h"
 
+#include <propkey.h>
+#include <propsys.h>
+#include <propvarutil.h>
+
 // ------------------------------------------------------------ engine control
 
 bool loadTo(App& a, int d, const Match& m) {
@@ -179,11 +183,78 @@ std::vector<std::wstring> rotationSingers(App& a) {
     return names;
 }
 
+// Write tags into the file itself through its shell property handler (the
+// same machinery Explorer's Details pane uses; mp3/mp4/wma have writable
+// handlers). Fails cleanly when the file is playing or the format can't.
+bool writeFileTags(const std::wstring& path, const std::wstring& artist,
+                   const std::wstring& title, const std::wstring& genre,
+                   int year) {
+    IPropertyStore* ps = nullptr;
+    if (FAILED(SHGetPropertyStoreFromParsingName(path.c_str(), nullptr,
+                                                 GPS_READWRITE,
+                                                 IID_PPV_ARGS(&ps))))
+        return false;
+    bool ok = true;
+    PROPVARIANT v;
+    const auto put = [&](REFPROPERTYKEY key, const std::wstring& s, bool vec) {
+        const HRESULT hr = vec ? InitPropVariantFromStringAsVector(s.c_str(), &v)
+                               : InitPropVariantFromString(s.c_str(), &v);
+        if (FAILED(hr) || FAILED(ps->SetValue(key, v))) ok = false;
+        PropVariantClear(&v);
+    };
+    put(PKEY_Title, title, false);
+    put(PKEY_Music_Artist, artist, true);
+    put(PKEY_Music_Genre, genre, true);
+    if (year > 0) {
+        if (FAILED(InitPropVariantFromUInt32(UINT32(year), &v)) ||
+            FAILED(ps->SetValue(PKEY_Media_Year, v)))
+            ok = false;
+        PropVariantClear(&v);
+    }
+    ok = SUCCEEDED(ps->Commit()) && ok;
+    ps->Release();
+    return ok;
+}
+
+void applyTagEdit(App& a, bool toFile) {
+    const Match& m = a.tagEditItem;
+    a.prompt = App::Prompt::None;
+    if (!m.id) return;
+    const int year = std::clamp(_wtoi(a.tagField[3].c_str()), 0, 3000);
+    Db::Stmt q;
+    a.db.prepare(q, "UPDATE media_item SET artist=?2, title=?3, genre=?4, "
+                    "year=?5 WHERE id=?1");
+    q.bind(1, m.id)
+        .bind(2, utf8(a.tagField[0]))
+        .bind(3, utf8(a.tagField[1]))
+        .bind(4, utf8(a.tagField[2]))
+        .bind(5, int64_t(year));
+    q.step();
+    a.searchDirty = a.navDirty = true;
+    if (!toFile) {
+        a.status = L"tags saved: " + a.tagField[1];
+        return;
+    }
+    if (m.type == "karaoke_zip") {
+        a.status = L"tags saved to library (can't write inside a ZIP)";
+    } else if (writeFileTags(m.path, a.tagField[0], a.tagField[1],
+                             a.tagField[2], year)) {
+        a.status = L"tags saved to library and written into the file";
+    } else {
+        a.status = L"saved to library — file write failed (playing, "
+                   L"read-only, or format without a writable tag handler)";
+    }
+}
+
 // Confirm the "new singer" modal: the name becomes the current singer too.
 void commitPrompt(App& a) {
     if (a.prompt == App::Prompt::Columns ||
         a.prompt == App::Prompt::Requests) { // Enter closes these editors
         a.prompt = App::Prompt::None;
+        return;
+    }
+    if (a.prompt == App::Prompt::TagEdit) { // Enter = save to library
+        applyTagEdit(a, false);
         return;
     }
     if (a.prompt == App::Prompt::Confirm) {

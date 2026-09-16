@@ -44,8 +44,10 @@ Your library lives in `%APPDATA%\KaraokeDJ\` and survives every upgrade.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
 - Sortable, resizable, reorderable columns — right-click the header to choose
   what shows.
-- Playlists with drag-reorder, artist/title swap for mis-tagged files,
-  played-tonight dots, multi-select drag to queue.
+- Playlists with drag-reorder, played-tonight dots, multi-select drag to
+  queue.
+- **Tag editor**: right-click any track to fix artist/title/genre/year — in
+  the library only, or written straight into the file's real tags.
 
 ### 🖼️ Design your waiting screen
 - Between songs the output shows a screen **you lay out in Settings**: a

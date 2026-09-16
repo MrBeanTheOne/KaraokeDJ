@@ -309,10 +309,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                 tgt = a.nav == NavMode::Singers ? Focus::SingerName
                                                 : Focus::Search;
             std::wstring& target =
-                a.prompt != App::Prompt::None ? a.promptText
-                : tgt == Focus::SingerName    ? a.singerFilter
-                : tgt == Focus::IdleTitle     ? a.idleTitle
-                                              : a.search;
+                a.prompt == App::Prompt::TagEdit
+                    ? a.tagField[std::clamp(a.tagFocus, 0, 3)]
+                : a.prompt != App::Prompt::None ? a.promptText
+                : tgt == Focus::SingerName      ? a.singerFilter
+                : tgt == Focus::IdleTitle       ? a.idleTitle
+                                                : a.search;
             if (c == 8) { if (!target.empty()) target.pop_back(); }
             else target += c;
             if (a.prompt == App::Prompt::None) {

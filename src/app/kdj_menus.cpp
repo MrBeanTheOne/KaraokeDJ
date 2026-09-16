@@ -250,7 +250,7 @@ void handleMenu(App& a, HWND hwnd) {
         const Match m = a.results[req.index];
         const std::vector<std::wstring> items = {L"Mix now", L"Add to queue",
                                                  L"Play next (queue front)",
-                                                 L"Swap artist ↔ title"};
+                                                 L"Edit tags…"};
         const auto singers = rotationSingers(a);
         const int sel = showTrackMenu(a, hwnd, req.x, req.y, items, 4, singers);
         if (sel == 0) playNow(a, m);
@@ -264,15 +264,15 @@ void handleMenu(App& a, HWND hwnd) {
             }
             a.queue.push_front(m);
         }
-        else if (sel == 3) { // filename order guessed wrong ("Title - Artist" files)
+        else if (sel == 3) { // tag editor (replaces the old artist<->title swap)
             if (m.id) {
-                Db::Stmt q;
-                a.db.prepare(q, "UPDATE media_item SET artist=title, title=artist "
-                                "WHERE id=?1");
-                q.bind(1, m.id);
-                q.step();
-                a.searchDirty = a.navDirty = true;
-                a.status = L"swapped: " + m.title + L" - " + m.artist;
+                a.tagEditItem = m;
+                a.tagField[0] = m.artist;
+                a.tagField[1] = m.title;
+                a.tagField[2] = m.genre;
+                a.tagField[3] = m.year > 0 ? std::to_wstring(m.year) : L"";
+                a.tagFocus = 1;
+                a.prompt = App::Prompt::TagEdit;
             } else {
                 a.status = L"not in the library (import it first)";
             }
