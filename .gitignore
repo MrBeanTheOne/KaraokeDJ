@@ -1,0 +1,10 @@
+# TermDeck agent brain (local memory)
+.termdeck/
+build/
+tests/media-fixtures/
+*.db
+*.db-wal
+*.db-shm
+KaraokeDJ-*-win64.exe
+*.db.backup
+input/

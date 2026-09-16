@@ -1,0 +1,3 @@
+// App icon: resource id 1 = the icon Explorer shows for the exe, and the one
+// wWinMain loads for the window class (taskbar / alt-tab).
+1 ICON "karaoke_dj.ico"

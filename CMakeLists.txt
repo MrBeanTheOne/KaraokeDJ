@@ -1,0 +1,106 @@
+cmake_minimum_required(VERSION 3.21)
+project(karaoke-dj VERSION 1.0.2 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Static CRT: the installer then needs no VC++ redistributable on the target
+# laptop — the exes are self-contained.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>"
+                    "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+
+add_executable(harness
+  src/app/harness_main.cpp
+  src/media/mf_decoder.cpp
+  src/playback/deck.cpp
+  src/playback/mixer.cpp
+  src/audio/wasapi_out.cpp)
+target_include_directories(harness PRIVATE src)
+target_link_libraries(harness PRIVATE mfplat mfreadwrite mfuuid ole32 avrt psapi)
+
+add_executable(video_harness
+  src/app/video_harness_main.cpp
+  src/karaoke/cdg_renderer.cpp
+  src/media/zip_media.cpp
+  src/media/mf_decoder.cpp
+  src/media/mf_video_decoder.cpp
+  src/playback/deck.cpp
+  src/playback/mixer.cpp
+  src/audio/wasapi_out.cpp
+  src/video/video_window.cpp)
+target_include_directories(video_harness PRIVATE src)
+target_link_libraries(video_harness PRIVATE miniz mfplat mfreadwrite mfuuid ole32 avrt d2d1 d3d11
+  dwrite)
+
+add_executable(gen_test_video tools/gen_test_video.cpp)
+target_link_libraries(gen_test_video PRIVATE mfplat mfreadwrite mfuuid ole32)
+
+add_library(miniz STATIC external/miniz/miniz.c)
+target_include_directories(miniz PUBLIC external/miniz)
+
+add_library(sqlite3 STATIC external/sqlite/sqlite3.c)
+target_include_directories(sqlite3 PUBLIC external/sqlite)
+
+add_executable(librarian
+  src/app/librarian_main.cpp
+  src/library/db.cpp
+  src/library/media_query.cpp
+  src/library/scanner.cpp)
+target_include_directories(librarian PRIVATE src)
+target_link_libraries(librarian PRIVATE sqlite3 shell32 propsys ole32 normaliz)
+
+add_executable(karaoke_dj WIN32
+  src/app/karaoke_dj_main.cpp
+  src/app/kdj_data.cpp
+  src/app/kdj_engine.cpp
+  src/app/kdj_ui.cpp
+  src/app/kdj_menus.cpp
+  assets/app.rc
+  src/ui/im.cpp
+  src/library/db.cpp
+  src/library/media_query.cpp
+  src/library/scanner.cpp
+  src/karaoke/cdg_renderer.cpp
+  src/media/mf_decoder.cpp
+  src/media/mf_video_decoder.cpp
+  src/media/waveform.cpp
+  src/media/zip_media.cpp
+  src/playback/deck.cpp
+  src/playback/mixer.cpp
+  src/audio/wasapi_out.cpp
+  src/video/video_window.cpp)
+target_include_directories(karaoke_dj PRIVATE src)
+target_link_libraries(karaoke_dj PRIVATE sqlite3 miniz normaliz psapi mfplat mfreadwrite mfuuid ole32 avrt d3d11
+  d2d1 dwrite shell32 propsys)
+
+add_executable(test_core tests/unit/test_core.cpp src/karaoke/cdg_renderer.cpp)
+target_include_directories(test_core PRIVATE src)
+
+# ------------------------------------------------------------------ installer
+# `cpack -G NSIS -C Release` in build/ produces KaraokeDJ-<ver>-win64.exe:
+# installs the operator app + librarian CLI to Program Files, Start-menu and
+# desktop shortcuts, standard uninstaller. User data (%APPDATA%\KaraokeDJ) is
+# created at runtime and never touched by the uninstaller.
+install(TARGETS karaoke_dj librarian RUNTIME DESTINATION .)
+
+set(CPACK_GENERATOR NSIS)
+set(CPACK_PACKAGE_NAME "Karaoke DJ")
+set(CPACK_PACKAGE_VENDOR "Karaoke DJ")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Two-deck karaoke / video DJ")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "Karaoke DJ")
+# Version-less registry key: every version shares one identity, so a newer
+# installer auto-uninstalls the older one and Apps never shows duplicates.
+set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "Karaoke DJ")
+set(CPACK_PACKAGE_FILE_NAME "KaraokeDJ-${PROJECT_VERSION}-win64")
+set(CPACK_PACKAGE_EXECUTABLES "karaoke_dj;Karaoke DJ")
+set(CPACK_CREATE_DESKTOP_LINKS "karaoke_dj")
+set(CPACK_NSIS_DISPLAY_NAME "Karaoke DJ")
+set(CPACK_NSIS_PACKAGE_NAME "Karaoke DJ")
+set(CPACK_NSIS_INSTALLED_ICON_NAME "karaoke_dj.exe")
+set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/assets/karaoke_dj.ico")
+set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/assets/karaoke_dj.ico")
+set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+set(CPACK_NSIS_MODIFY_PATH OFF)
+include(CPack)
