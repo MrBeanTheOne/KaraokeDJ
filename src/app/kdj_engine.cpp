@@ -342,10 +342,17 @@ void engineTick(App& a) {
             a.pendingFade = -1;
             a.status = L"playing: " + a.label[pf];
             if (a.deckMatch[pf].id) { // tonight's history: every track on air
+                // Singer from the rotation row singNow marked — the on-screen
+                // list can be filtered to a different name mid-search.
                 std::wstring who;
-                for (const auto& sg : a.singers)
-                    if (sg.status == "singing" && sg.song.id == a.deckMatch[pf].id)
-                        who = sg.singer;
+                if (a.singingItemId >= 0) {
+                    Db::Stmt sq;
+                    a.db.prepare(sq, "SELECT singer, media_id FROM "
+                                     "singer_queue_item WHERE id=?1");
+                    sq.bind(1, a.singingItemId);
+                    if (sq.step() && sq.colInt(1) == a.deckMatch[pf].id)
+                        who = wide(sq.colText(0));
+                }
                 Db::Stmt h;
                 a.db.prepare(h, "INSERT INTO play_history(media_id,singer,started_at) "
                                 "VALUES(?1,?2,strftime('%s','now'))");

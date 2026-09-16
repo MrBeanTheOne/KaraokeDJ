@@ -723,6 +723,12 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
             for (const auto& s : a.singers)
                 if (s.status == "waiting") { singNow(a, s); break; }
         }
+        if (!a.singerFilter.empty() && a.singers.empty())
+            ui.text(rc(r.left + 14, r.top + 48, r.right - r.left - 28, 20),
+                    L"No singer matching “" + a.singerFilter +
+                        L"” — nothing upcoming and no plays recorded "
+                        L"under that name.",
+                    12, cDim, 0, false);
     } else {
         std::wstring title = a.nav == NavMode::Library ? L"SEARCH"
                              : a.nav == NavMode::Playlist ? a.navPlaylistName
@@ -923,10 +929,12 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
                                     : s.status == "waiting"  ? cAccent
                                     : s.status == "completed" ? cDim
                                                               : cRed;
-            wchar_t num[8]; // ordinal within its section, not the raw position
-            swprintf(num, 8, L"%d.",
-                     int(i) < sepIdx ? int(i) + 1 : int(i) - sepIdx);
-            ui.text(rc(row.left + 8, y, 30, rowH), num, 12, cDim, 0, false);
+            if (s.itemId >= 0) { // rotation ordinal; history rows aren't slots
+                wchar_t num[8]; // ordinal within its section, not raw position
+                swprintf(num, 8, L"%d.",
+                         int(i) < sepIdx ? int(i) + 1 : int(i) - sepIdx);
+                ui.text(rc(row.left + 8, y, 30, rowH), num, 12, cDim, 0, false);
+            }
             ui.text(rc(row.left + 40, y, 110, rowH), s.singer, 13, cText, 0, true);
             ui.text(rc(row.left + 156, y, 84, rowH),
                     s.itemId == -2 ? s.when : wide(s.status), 11, sc, 0, true);

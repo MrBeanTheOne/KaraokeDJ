@@ -187,8 +187,7 @@ void reloadNav(App& a) {
         a.db.prepare(hq, "SELECT h.started_at, h.singer, m.id, m.artist, m.title, "
                          "m.path, m.type, m.duration_ms "
                          "FROM play_history h JOIN media_item m ON m.id=h.media_id "
-                         "WHERE h.started_at > strftime('%s','now') - 2592000 "
-                         "ORDER BY h.started_at DESC LIMIT 200");
+                         "ORDER BY h.started_at DESC LIMIT 500");
         bool sep = false;
         while (hq.step()) {
             const std::wstring who = wide(hq.colText(1));
@@ -204,10 +203,13 @@ void reloadNav(App& a) {
             row.singer = who;
             row.status = "played";
             const time_t at = time_t(hq.colInt(0));
-            tm lt{};
+            const time_t now = time(nullptr);
+            tm lt{}, ln{};
             localtime_s(&lt, &at);
+            localtime_s(&ln, &now);
             wchar_t b[20];
-            wcsftime(b, 20, L"%m/%d %H:%M", &lt);
+            wcsftime(b, 20, lt.tm_year == ln.tm_year ? L"%m/%d %H:%M" : L"%m/%d/%y",
+                     &lt);
             row.when = b;
             row.song = readMatch(hq, 2);
             row.label = row.song.label;
