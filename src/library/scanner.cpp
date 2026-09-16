@@ -261,11 +261,13 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
         Db::Stmt up;
         db.prepare(up,
                    "INSERT INTO media_item(path,type,title,artist,duration_ms,file_size,"
-                   "modified_time,status,genre,year,bpm) VALUES(?1,?2,?3,?4,?5,?6,?7,"
-                   "'ok',?8,?9,?10) "
+                   "modified_time,status,genre,year,bpm,search_f) "
+                   "VALUES(?1,?2,?3,?4,?5,?6,?7,'ok',?8,?9,?10,"
+                   "fold(?3)||char(10)||fold(?4)||char(10)||fold(?1)) "
                    "ON CONFLICT(path) DO UPDATE SET type=?2,title=?3,artist=?4,"
                    "duration_ms=?5,file_size=?6,modified_time=?7,genre=?8,year=?9,"
-                   "bpm=CASE WHEN ?10>0 THEN ?10 ELSE bpm END");
+                   "bpm=CASE WHEN ?10>0 THEN ?10 ELSE bpm END,"
+                   "search_f=fold(?3)||char(10)||fold(?4)||char(10)||fold(?1)");
         up.bind(1, utf8(w.path)).bind(2, w.type).bind(3, utf8(title)).bind(4, utf8(artist));
         up.bind(5, m.durMs).bind(6, w.size).bind(7, w.mtime).bind(9, m.year);
         up.bind(10, m.bpm);

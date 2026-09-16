@@ -8,19 +8,22 @@ std::vector<Match> searchMedia(Db& db, const std::wstring& term, int limit,
     static const char* kCols[] = {"artist", "title", "genre",
                                   "year",   "bpm",   "duration_ms"};
     if (sortCol < 0 || sortCol > 5) sortCol = 0;
+    const std::string folded = utf8(foldW(term));
     std::string sql = // fold() = case- and accent-insensitive ("eglise" finds "Église")
         "SELECT id,artist,title,path,type,duration_ms,genre,year,bpm FROM media_item "
-        "WHERE (fold(title) LIKE ?1 OR fold(artist) LIKE ?1 OR fold(path) LIKE ?1) "
-        "AND type IN ('audio','mp3g','video','karaoke_zip') AND path LIKE ?3 ORDER BY ";
+        "WHERE type IN ('audio','mp3g','video','karaoke_zip') AND path LIKE ?3 ";
+    if (!folded.empty()) // pre-folded text: one LIKE scan, no fold() calls
+        sql += "AND search_f LIKE ?1 ";
+    sql += "ORDER BY ";
     sql += kCols[sortCol];
     sql += " COLLATE NOCASE ";
     sql += sortAsc ? "ASC" : "DESC";
     sql += ", artist COLLATE NOCASE, title COLLATE NOCASE LIMIT ?2";
 
-    const std::string like = "%" + utf8(foldW(term)) + "%";
     Db::Stmt q;
     db.prepare(q, sql.c_str());
-    q.bind(1, like).bind(2, int64_t(limit)).bind(3, utf8(pathPrefix) + "%");
+    if (!folded.empty()) q.bind(1, "%" + folded + "%");
+    q.bind(2, int64_t(limit)).bind(3, utf8(pathPrefix) + "%");
     std::vector<Match> out;
     while (q.step()) {
         Match m;

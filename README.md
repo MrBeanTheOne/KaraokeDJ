@@ -43,6 +43,8 @@ Settings) and points you at the download when one exists.
 ### 📚 A library that keeps up
 - Fast parallel import with live progress; closing mid-import is safe, and a
   mid-gig import drops to background priority so playback always wins.
+- Built for **big collections**: 100k+ track libraries browse and search
+  smoothly (pre-folded search text, debounced queries).
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
 - Sortable, resizable, reorderable columns — right-click the header to choose
   what shows.

@@ -320,7 +320,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             else target += c;
             if (a.prompt == App::Prompt::None) {
                 a.focus = tgt; // the box lights up once you type
-                if (tgt == Focus::Search) a.searchDirty = true;
+                if (tgt == Focus::Search) {
+                    a.searchDirty = true;
+                    a.searchEditAt = Clock::now(); // debounced reload
+                }
                 if (tgt == Focus::SingerName) a.navDirty = true;
             }
         }
@@ -523,7 +526,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         }
 
         if (a.navDirty) reloadNav(a);
-        if (a.searchDirty) reloadBrowser(a);
+        if (a.searchDirty && Clock::now() - a.searchEditAt > 180ms)
+            reloadBrowser(a);
 
         engineTick(a);
 

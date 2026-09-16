@@ -223,7 +223,8 @@ void applyTagEdit(App& a, bool toFile) {
     const int year = std::clamp(_wtoi(a.tagField[3].c_str()), 0, 3000);
     Db::Stmt q;
     a.db.prepare(q, "UPDATE media_item SET artist=?2, title=?3, genre=?4, "
-                    "year=?5 WHERE id=?1");
+                    "year=?5, search_f=fold(?3)||char(10)||fold(?2)||"
+                    "char(10)||fold(path) WHERE id=?1");
     q.bind(1, m.id)
         .bind(2, utf8(a.tagField[0]))
         .bind(3, utf8(a.tagField[1]))

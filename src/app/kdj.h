@@ -131,6 +131,7 @@ struct App {
     Focus focus = Focus::None; // None = no box lit; typing goes to the
                                // view's natural box and focuses it
     bool searchDirty = true, navDirty = true;
+    Clock::time_point searchEditAt{}; // last search keystroke (debounce)
     NavMode nav = NavMode::Library;
     int64_t navPlaylist = -1;
     std::wstring navPlaylistName, navFolder;
@@ -140,6 +141,7 @@ struct App {
     std::set<std::wstring> expanded;       // folder tree expand state
     std::vector<std::pair<std::wstring, int>> flatFolders; // fallback, no roots
     std::vector<Match> results;
+    int libCount = 0; // playable library rows (sidebar "All tracks (n)")
     std::vector<SingerRow> singers;
     int64_t singingItemId = -1;
     std::deque<Match> queue;

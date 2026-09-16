@@ -197,6 +197,12 @@ void reloadNav(App& a) {
               [](auto& x, auto& y) { return x.second > y.second; });
     if (a.flatFolders.size() > 20) a.flatFolders.resize(20);
 
+    {
+        Db::Stmt c;
+        a.db.prepare(c, "SELECT COUNT(*) FROM media_item WHERE type IN "
+                        "('audio','mp3g','video','karaoke_zip')");
+        a.libCount = c.step() ? int(c.colInt(0)) : 0;
+    }
     a.singers.clear();
     const std::wstring sf = foldW(a.singerFilter);
     Db::Stmt s;
@@ -307,9 +313,10 @@ void reloadNav(App& a) {
 
 void reloadBrowser(App& a) {
     if (a.nav == NavMode::Library) {
-        a.results = searchMedia(a.db, a.search, 200, L"", a.sortCol, a.sortAsc);
+        a.results = searchMedia(a.db, a.search, 200000, L"", a.sortCol, a.sortAsc);
     } else if (a.nav == NavMode::Folder) {
-        a.results = searchMedia(a.db, a.search, 200, a.navFolder, a.sortCol, a.sortAsc);
+        a.results = searchMedia(a.db, a.search, 200000, a.navFolder, a.sortCol,
+                                a.sortAsc);
     } else if (a.nav == NavMode::Playlist) {
         a.results.clear();
         Db::Stmt q;

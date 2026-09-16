@@ -120,6 +120,14 @@ bool Db::open(const std::wstring& path) {
     exec("ALTER TABLE media_item ADD COLUMN cue_in_ms INTEGER DEFAULT 0;");
     exec("ALTER TABLE media_item ADD COLUMN cue_out_ms INTEGER DEFAULT 0;");
     exec("ALTER TABLE media_item ADD COLUMN bpm INTEGER DEFAULT 0;");
+    // Pre-folded search text (title\nartist\npath): a 100k-row library
+    // cannot afford the NFD fold() per row per keystroke, so it's folded
+    // once here / at insert and searched as plain text. Kept in sync by the
+    // scanner upsert and the tag editor.
+    exec("ALTER TABLE media_item ADD COLUMN search_f TEXT;");
+    exec("UPDATE media_item SET search_f = fold(COALESCE(title,'')) || "
+         "char(10) || fold(COALESCE(artist,'')) || char(10) || fold(path) "
+         "WHERE search_f IS NULL;");
     return true;
 }
 

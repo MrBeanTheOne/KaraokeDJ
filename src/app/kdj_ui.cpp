@@ -344,7 +344,9 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
     };
     std::vector<Row> rows;
     rows.push_back({L"BROWSE", L"", 1});
-    rows.push_back({L"All tracks", L"", 0, 0, false, false, NavMode::Library, -1});
+    wchar_t at[48];
+    swprintf(at, 48, L"All tracks (%d)", a.libCount);
+    rows.push_back({at, L"", 0, 0, false, false, NavMode::Library, -1});
     wchar_t hr2[48];
     swprintf(hr2, 48, L"Played tonight (%zu)", a.history.size());
     rows.push_back({hr2, L"", 0, 0, false, false, NavMode::History, -1});
