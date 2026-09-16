@@ -1,90 +1,79 @@
-# Karaoke DJ
+<div align="center">
 
-A professional two-deck karaoke / video DJ app for Windows, built to run a
-full night from a regular laptop — no dedicated GPU required. Dark
-VirtualDJ-style interface, singer rotation management, and a second-screen
-video output for the crowd.
+# 🎤 Karaoke DJ
 
+**A professional two-deck karaoke & video DJ app for Windows — built to run a
+full night from a regular laptop, no dedicated GPU required.**
+
+[![Download](https://img.shields.io/github/v/release/MrBeanTheOne/KaraokeDJ?label=download&color=d22c36)](https://github.com/MrBeanTheOne/KaraokeDJ/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Language](https://img.shields.io/badge/C%2B%2B-20-red)
-![License](https://img.shields.io/badge/license-private-lightgrey)
+![Dependencies](https://img.shields.io/badge/runtime%20deps-none-4ade80)
 
-## Features
+<img src="docs/app.png" alt="Karaoke DJ" width="900">
 
-### Playback
-- **Two decks + crossfader** — automix with configurable fade length, or mix
-  by hand. The crossfader fills blue (deck A) / red (deck B) from center.
-- **Hardware video decode** (Media Foundation + D3D11) — smooth video
-  karaoke even on a weak laptop CPU.
-- **Formats**: MP3+G (mp3/cdg pairs), karaoke ZIPs, video files (MP4 etc.),
-  plain audio.
-- **YouTube links** — paste a URL into the search box and press Enter; the
-  track downloads and drops into the queue (yt-dlp + ffmpeg bundled).
-- **Start/end markers** per song — set them manually (drag the handles above
-  the waveform) or let smart automix skip silent intros/outros. Saved per
-  track.
-- **Auto volume leveling** — track loudness is measured during the waveform
-  scan and the gain is matched so singers don't get blasted between songs.
-- **BPM detection** — read from tags at import when present, otherwise
-  detected in the background (onset autocorrelation) and filled into the
-  browser as the analyzer works through the library.
+</div>
 
-### Library
-- **Fast parallel import** with live progress; closing mid-import is safe and
-  a rescan continues where it stopped. Importing mid-gig is fine too: while
-  a deck is on air the scan threads drop to background priority so playback
-  always wins.
-- **Accent- and case-insensitive search** ("demo" finds "DÉMO").
-- **Sortable, reorderable columns** — drag dividers to resize, right-click
-  the header to reorder or hide columns (Title / Artist / Genre / Year /
-  BPM / Time).
-- **Playlists** — create in-app, drag to reorder, queue all with one
-  right-click. Deleting a playlist never touches queued songs.
-- **Artist/title swap** for mis-tagged files, played-tonight markers
-  (red dot), zebra striping, multi-select (shift-click) drag to queue.
+## 📥 Install
 
-### Phone requests (optional)
-- Flip **Allow phone requests** in Settings and singers on the venue Wi-Fi
-  (or the laptop's mobile hotspot) get a mobile page to search the library
-  and request songs under their name — a QR code appears on the waiting
-  screen between songs.
-- Phones only see **singable material**: CDG songs (mp3+cdg / karaoke ZIPs)
-  and tracks with "karaoke" in the title or filename. Plain music videos and
-  regular audio never show up — those stay the DJ's.
-- Requests land in a **REQUESTS** inbox in the header; the DJ approves each
-  one into the singer rotation or rejects it. Per-phone throttling keeps
-  pranksters out.
-- Optional **password**: set one in Settings and phones must enter it once
-  (each phone remembers it afterwards). Change it mid-night and everyone is
-  asked again. Blank = open.
-- Strictly opt-in and fully isolated: off by default, and when off no server,
-  thread, or port exists. Only song metadata is ever served.
+Grab **`KaraokeDJ-<version>-win64.exe`** from the
+[**latest release**](https://github.com/MrBeanTheOne/KaraokeDJ/releases/latest)
+and run it. The installer is fully self-contained — yt-dlp and ffmpeg are
+bundled, no runtimes to install — and cleanly replaces any older version.
+Your library lives in `%APPDATA%\KaraokeDJ\` and survives every upgrade.
 
-### Running the night
-- **Singer rotation** — right-click any track to add it under a singer;
-  reorder the rotation by dragging; completed / skipped / no-show entries
-  move to a per-singer history. Right-click clears the rotation or history
-  for a new night.
-- **Singer search** — look up any singer to see their upcoming songs and
-  full history.
-- **Tonight's history** — everything that hit the air, in order.
-- **Session snapshots** — the session is checkpointed continuously; if the
-  app (or the laptop) dies mid-gig, relaunching restores the night.
-- **Audio device recovery** — pulling the USB interface mid-song recovers to
-  the pinned or default device without a restart.
-- **Second-screen output** — full-screen video window on a chosen monitor
-  with fit modes (letterbox / fill / stretch), configured in Settings.
+## ✨ What it does
 
-## Installation
+### 🎛️ Two decks, zero babysitting
+- Automix with configurable fade length, or mix by hand — crossfader fills
+  blue (deck A) / red (deck B) from center.
+- **Hardware video decode** (Media Foundation + D3D11): smooth video karaoke
+  on a weak laptop CPU.
+- Plays **MP3+G** (mp3/cdg pairs), **karaoke ZIPs**, **video files**, plain
+  audio — and **YouTube links** pasted straight into the search box.
+- **Start/end markers** per song: drag the handles, or let smart automix skip
+  silent intros and outros. Saved per track.
+- **Auto volume leveling** — loudness is measured per track and matched, so
+  nobody gets blasted between songs.
+- **BPM everywhere**: read from tags on import, detected in the background
+  for everything else.
 
-Grab the latest `KaraokeDJ-<version>-win64.exe` installer from
-[Releases](https://github.com/MrBeanTheOne/KaraokeDJ/releases). It is fully
-self-contained (yt-dlp and ffmpeg included) and cleanly replaces any older
-version. The library database lives in `%APPDATA%\KaraokeDJ\`.
+### 📚 A library that keeps up
+- Fast parallel import with live progress; closing mid-import is safe, and a
+  mid-gig import drops to background priority so playback always wins.
+- Accent- and case-insensitive search ("demo" finds "DÉMO").
+- Sortable, resizable, reorderable columns — right-click the header to choose
+  what shows.
+- Playlists with drag-reorder, artist/title swap for mis-tagged files,
+  played-tonight dots, multi-select drag to queue.
 
-## Building from source
+### 🎤 Running the night
+- **Singer rotation** with per-singer history — reorder by drag, right-click
+  to clear for a new night, search any singer to see everything they've sung.
+- **Session snapshots**: if the laptop dies mid-gig, relaunching restores the
+  night exactly where it stopped.
+- **Audio device recovery**: pulling the USB interface mid-song recovers
+  without a restart.
+- **Second-screen video output** with letterbox / fill / stretch fit modes.
 
-Requirements: Visual Studio 2022+ (MSVC x64), CMake 3.20+.
+### 📱 Phone requests <sub>(optional, off by default)</sub>
+
+<img src="docs/waiting-screen.png" alt="Waiting screen with request QR" width="700">
+
+- Singers scan a **QR code on the waiting screen** and get a mobile page to
+  search the library and request songs under their name.
+- Requests land in a **REQUESTS inbox** — you approve into the rotation or
+  reject. Per-phone throttling keeps pranksters out.
+- Only **singable material** is offered (CDG songs, karaoke ZIPs, tracks with
+  "karaoke" in the name) — music videos stay yours.
+- Optional **password**: phones enter it once and remember it; change it
+  mid-night and everyone is asked again.
+- Strictly isolated: when off, no server, thread, or port exists. Only song
+  metadata is ever served.
+
+## 🔨 Building from source
+
+Requirements: Visual Studio 2022+ (MSVC x64), CMake 3.21+.
 
 ```
 cmake -B build
@@ -92,8 +81,8 @@ cmake --build build --config Release
 build\Release\test_core.exe        # sanity tests
 ```
 
-The installer target additionally expects `redist\yt-dlp.exe` and
-`redist\ffmpeg.exe` (not in the repo — drop in current builds), then:
+The installer additionally expects `redist\yt-dlp.exe` and `redist\ffmpeg.exe`
+(not committed — drop in current builds), then:
 
 ```
 cd build && cpack -C Release
@@ -103,7 +92,7 @@ SQLite, miniz, cpp-httplib and qrcodegen are vendored (`external/`);
 everything else is Windows SDK (Media Foundation, WASAPI,
 Direct2D/DirectWrite, Winsock).
 
-## Layout
+## 🗂️ Source layout
 
 ```
 src/app/       app state, UI drawing, engine tick, menus, data/db glue

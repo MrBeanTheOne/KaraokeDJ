@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(karaoke-dj VERSION 1.0.3 LANGUAGES C CXX)
+project(karaoke-dj VERSION 1.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -114,8 +114,10 @@ set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_COMPRESSOR "/SOLID lzma") # ffmpeg squeezes ~3x
 # Inbound firewall rule for the phone-request server (silent if the user
 # never enables the feature; removed again on uninstall).
+# NOTE: these strings are parsed TWICE (CMakeLists -> CPackConfig -> cpack),
+# so quotes and backslashes are double-escaped.
 set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
-    "ExecWait 'netsh advfirewall firewall delete rule name=\"Karaoke DJ\"'\nExecWait 'netsh advfirewall firewall add rule name=\"Karaoke DJ\" dir=in action=allow program=\"$INSTDIR\\karaoke_dj.exe\"'")
+    "ExecWait 'netsh advfirewall firewall delete rule name=\\\"Karaoke DJ\\\"'\nExecWait 'netsh advfirewall firewall add rule name=\\\"Karaoke DJ\\\" dir=in action=allow program=\\\"$INSTDIR\\\\karaoke_dj.exe\\\"'")
 set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
-    "ExecWait 'netsh advfirewall firewall delete rule name=\"Karaoke DJ\"'")
+    "ExecWait 'netsh advfirewall firewall delete rule name=\\\"Karaoke DJ\\\"'")
 include(CPack)
