@@ -8,6 +8,7 @@
 #include <functional>
 #include <vector>
 
+#include "media/key_detect.h"
 #include "media/mf_decoder.h"
 
 // BPM from an onset-energy envelope sampled at 93.75 Hz (48 kHz / 512-frame
@@ -37,9 +38,11 @@ static int bpmFromOnset(std::vector<float>& onset) {
     return bestLag > 0 ? int(hopHz * 60.0 / bestLag + 0.5) : 0;
 }
 
-int analyzeBpm(const std::wstring& path) {
+bool analyzeTrack(const std::wstring& path, int& bpm, int& key) {
+    bpm = 0;
+    key = -1;
     MFDecoder dec;
-    if (!dec.open(path, 48000, 2)) return 0;
+    if (!dec.open(path, 48000, 2)) return false;
     // A middle segment hears enough beats; decoding the whole file would
     // triple the analysis time for nothing.
     const uint64_t total = dec.durationFrames(48000);
@@ -51,9 +54,11 @@ int analyzeBpm(const std::wstring& path) {
     double hopE = 0.0;
     float prevE = 0.f;
     uint32_t hopN = 0;
+    KeyDetector kd;
     while (onset.size() < maxHops) {
         chunk.clear();
         if (!dec.readChunk(chunk)) break;
+        kd.feed(chunk.data(), chunk.size() / 2); // same decode, no extra pass
         for (size_t i = 0; i + 1 < chunk.size(); i += 2) {
             float v = std::fabs(chunk[i]);
             const float v2 = std::fabs(chunk[i + 1]);
@@ -68,7 +73,9 @@ int analyzeBpm(const std::wstring& path) {
             }
         }
     }
-    return bpmFromOnset(onset);
+    bpm = bpmFromOnset(onset);
+    key = kd.result();
+    return true;
 }
 
 void WaveformScanner::cancel() {
@@ -78,6 +85,7 @@ void WaveformScanner::cancel() {
     ready_.store(0);
     loud_.store(0.f);
     bpm_.store(0);
+    key_.store(-1);
     for (auto& b : bins_) b.store(0.f);
 }
 
@@ -101,6 +109,7 @@ void WaveformScanner::start(const std::wstring& path) {
                     // (93.75 Hz), positive flux only.
                     std::vector<float> onset;
                     onset.reserve(size_t(total / 512) + 8);
+                    KeyDetector kd;
                     double hopE = 0.0;
                     float prevE = 0.f;
                     uint32_t hopN = 0;
@@ -118,6 +127,7 @@ void WaveformScanner::start(const std::wstring& path) {
                     while (!cancel_.load(std::memory_order_relaxed) && bin < kBins) {
                         chunk.clear();
                         if (!dec.readChunk(chunk)) break;
+                        kd.feed(chunk.data(), chunk.size() / 2);
                         for (size_t i = 0; i + 1 < chunk.size(); i += 2) {
                             float v = std::fabs(chunk[i]);
                             const float v2 = std::fabs(chunk[i + 1]);
@@ -151,6 +161,7 @@ void WaveformScanner::start(const std::wstring& path) {
                     if (!cancel_.load(std::memory_order_relaxed)) {
                         const int b = bpmFromOnset(onset);
                         if (b > 0) bpm_.store(b, std::memory_order_release);
+                        key_.store(kd.result(), std::memory_order_release);
                     }
                 }
             }

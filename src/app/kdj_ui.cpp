@@ -88,13 +88,30 @@ void drawDeck(App& a, Ui& ui, int d, const D2D1_RECT_F& r) {
     const int readyN = a.wave[d].readyBins();
     const float bw = (wf.right - wf.left) / float(WaveformScanner::kBins);
     const float midY = (wf.top + wf.bottom) / 2;
+    // The played-so-far accent means "the playhead got here", so it is drawn
+    // for a deck that is on air (pausing keeps it — the track is still the one
+    // on the deck, just halted) AND for one sitting mid-track, which is how a
+    // crash-restored or scrubbed deck comes back. A freshly CUED deck rests
+    // exactly on its start marker and stays grey: colouring that would read as
+    // "already played" when all it did was seek. Bins outside the start/end
+    // markers fade back, so the part that will really be heard stands out.
+    const uint64_t cueFr =
+        uint64_t((std::max)(int64_t(0), a.cueIn[d])) * kRate / 1000;
+    const bool onAir = a.decks[d]->playing.load() ||
+                       a.decks[d]->framesPlayed.load() > cueFr + kRate / 2;
+    const float inFrac = total > 0 ? float(double(a.cueIn[d]) / (total * 1000.0)) : 0.f;
+    const float outFrac = total > 0 && a.cueOut[d] > 0
+                              ? float(double(a.cueOut[d]) / (total * 1000.0))
+                              : 1.f;
     for (int i = 0; i < readyN; ++i) {
         float v = a.wave[d].bin(i);
         v = (std::min)(1.f, sqrtf(v) * 1.15f);
         const float bh = (std::max)(1.5f, v * 40.f);
-        const bool done = float(i) / WaveformScanner::kBins <= frac;
+        const float bf = float(i) / WaveformScanner::kBins;
+        const bool done = onAir && bf <= frac;
+        const bool outside = bf < inFrac || bf > outFrac;
         D2D1_COLOR_F bc = done ? ac : col(0x3A3A40);
-        if (done) bc.a = 0.9f;
+        bc.a = outside ? 0.22f : done ? 0.9f : 1.f;
         ui.rect(rc(wf.left + i * bw, midY - bh / 2, (std::max)(1.f, bw - 0.5f), bh), bc,
                 1);
     }
@@ -144,6 +161,9 @@ void drawDeck(App& a, Ui& ui, int d, const D2D1_RECT_F& r) {
                     q.bind(1, a.deckMatch[d].id).bind(2, a.cueIn[d]).bind(3, outSave);
                     q.step();
                 }
+                // The deck follows the START marker straight away — saving it
+                // without re-cueing is what made a post-load move look ignored.
+                if (a.markerWhich == 0) applyCueIn(a, d);
                 a.markerDeck = a.markerWhich = -1;
             }
         }
@@ -189,6 +209,35 @@ void drawDeck(App& a, Ui& ui, int d, const D2D1_RECT_F& r) {
     // Labeled CLEAR: it empties the deck (and hands over when it was live),
     // it doesn't halt-in-place — that's PAUSE.
     if (ui.button(120 + d, rc(x + 100, by, 72, 32), L"CLEAR", cRed)) stopDeck(a, d);
+
+    // Key change: semitones up/down, pitch only — the tempo (and with it the
+    // lyric/video sync) is untouched. Costs nothing while it reads 0; the
+    // shifter allocates the first time a key is dialled in, and every load
+    // puts it back to 0. Click the readout to zero it.
+    const int semi = a.decks[d]->key.semitones();
+    // The big readout is the key the singer will actually hear: the track's
+    // detected key transposed by the buttons. Until the analyzer has a key
+    // for this track it falls back to the bare semitone offset.
+    const std::wstring kname = keyName(int(a.deckMatch[d].musicKey), semi);
+    // Centred under the jog platter (its centre is r.right - 86); the group
+    // spans 128 px, so it starts 64 px left of that.
+    const float kx = r.right - 86 - 64;
+    if (ui.button(130 + d, rc(kx, by, 30, 32), L"−", cAccent))
+        a.decks[d]->key.setSemitones(semi - 1, kCh);
+    const D2D1_RECT_F kr = rc(kx + 32, by, 64, 32);
+    ui.rect(kr, semi ? mix(cInset, cGreen, 0.14f) : cInset, 6);
+    wchar_t off[8];
+    swprintf(off, 8, L"%+d", semi);
+    // Caption: KEY while we're at the original, how far off it once moved.
+    ui.text(rc(kr.left, kr.top + 3, 64, 11), semi ? off : L"KEY", 9,
+            semi ? cGreen : cDim, 1, true);
+    ui.text(rc(kr.left, kr.top + 13, 64, 17),
+            kname.empty() ? std::wstring(semi ? off : L"0") : kname, 15,
+            semi ? cGreen : kname.empty() ? cDim : cText, 1, true);
+    if (ui.in.pressed && hit(kr, ui.in.pressX, ui.in.pressY))
+        a.decks[d]->key.setSemitones(0, kCh);
+    if (ui.button(140 + d, rc(kx + 98, by, 30, 32), L"+", cAccent))
+        a.decks[d]->key.setSemitones(semi + 1, kCh);
 }
 
 void drawMixer(App& a, Ui& ui, const D2D1_RECT_F& r) {
@@ -701,6 +750,24 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
             10, cDim, 0, false);
     y += 44;
 
+    ui.text(rc(x, y, w, 16), L"YOUTUBE", 11, cDim, 0, true);
+    y += 24;
+    ui.text(rc(x, y, 190, 26), L"Download folder", 12, cText, 0, false);
+    if (ui.button(611, rc(x + 200, y, 130, 26), L"PICK FOLDER…", cAccent))
+        a.menu = {MenuReq::None, -7}; // STA picker runs after this frame
+    if (a.ytDir.empty()) {
+        ui.text(rc(x + 340, y, w - 344, 26),
+                L"default — %APPDATA%\\KaraokeDJ\\youtube (not in the library)",
+                10, cDim, 0, false);
+    } else {
+        ui.text(rc(x + 340, y, w - 384, 26), a.ytDir, 11, cDim, 0, false);
+        if (ui.button(612, rc(x + w - 34, y, 30, 26), L"✕", cRed)) {
+            a.ytDir.clear();
+            setSetting(a.db, "yt_dir", "");
+        }
+    }
+    y += 44;
+
     ui.text(rc(x, y, w, 16), L"PHONE REQUESTS", 11, cDim, 0, true);
     y += 24;
     if (ui.toggle(620, rc(x, y, 300, 28), L"ALLOW PHONE REQUESTS", a.webOn,
@@ -1010,22 +1077,24 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
 
     // Column layout from the model: visible columns (colSeq order) share the
     // flexible width by normalized colFrac. Column ids: 0 TITLE 1 ARTIST
-    // 2 GENRE 3 YEAR 4 BPM 5 TIME (sort ids map via kColSort).
-    static const wchar_t* kColName[6] = {L"TITLE", L"ARTIST", L"GENRE",
-                                         L"YEAR",  L"BPM",    L"TIME"};
-    static const int kColSort[6] = {1, 0, 2, 3, 4, 5};
+    // 2 GENRE 3 YEAR 4 BPM 5 TIME 6 KEY (sort ids map via kColSort).
+    static const wchar_t* kColName[App::kNumCols] = {
+        L"TITLE", L"ARTIST", L"GENRE", L"YEAR", L"BPM", L"TIME", L"KEY"};
+    static const int kColSort[App::kNumCols] = {1, 0, 2, 3, 4, 5, 6};
+    // BPM and TIME are numbers and read right-aligned; everything else left.
+    auto colRight = [](int id) { return id == 4 || id == 5; };
     const float listLeft = r.left + 6, listRight = r.right - r.left - 12 + r.left + 6;
     const float cw = (listRight - listLeft) - 66 - 8;
-    int visIds[6];
+    int visIds[App::kNumCols];
     int nVis = 0;
     float fracSum = 0.f;
-    for (int k = 0; k < 6; ++k) {
+    for (int k = 0; k < App::kNumCols; ++k) {
         const int id = a.colSeq[k];
         if (!a.colShow[id]) continue;
         visIds[nVis++] = id;
         fracSum += a.colFrac[id];
     }
-    float colX[6]{}, colW[6]{};
+    float colX[App::kNumCols]{}, colW[App::kNumCols]{};
     {
         float cx0 = listLeft + 66;
         for (int v = 0; v < nVis; ++v) {
@@ -1067,7 +1136,7 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
             const bool active = a.sortCol == kColSort[id];
             std::wstring t = kColName[id];
             if (active) t += a.sortAsc ? L" ▲" : L" ▼";
-            ui.text(hr, t, 10, active ? cAccent : cDim, id >= 4 ? 2 : 0, true);
+            ui.text(hr, t, 10, active ? cAccent : cDim, colRight(id) ? 2 : 0, true);
             if (a.nav != NavMode::Playlist && a.colDrag < 0 && ui.in.pressed &&
                 hit(hr, ui.in.pressX, ui.in.pressY)) {
                 if (a.sortCol == kColSort[id]) a.sortAsc = !a.sortAsc;
@@ -1217,7 +1286,7 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
             for (int v = 0; v < nVis; ++v) {
                 const int id = visIds[v];
                 const D2D1_RECT_F cell =
-                    rc(colX[v], y, colW[v] - (id >= 4 ? 18.f : 8.f), rowH);
+                    rc(colX[v], y, colW[v] - (colRight(id) ? 18.f : 8.f), rowH);
                 switch (id) {
                 case 0:
                     ui.text(cell, m.title.empty() ? m.label : m.title, 13, cText,
@@ -1235,6 +1304,10 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
                     break;
                 case 5:
                     ui.text(cell, fmtTime(double(m.durMs) / 1000), 12, cDim, 2,
+                            false);
+                    break;
+                case 6: // detected musical key, blank until analysed
+                    ui.text(cell, keyName(int(m.musicKey), 0), 12, cDim, 0,
                             false);
                     break;
                 }
@@ -1379,7 +1452,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
     ui.text(rc(16, 8, 300, 32), L"KARAOKE DJ", 20, cAccent, 0, true);
     wchar_t perf[96];
     if (a.bpmBusy.load() && a.bpmTotal.load() > 0)
-        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB   ANALYZING BPM %d / %d",
+        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB   ANALYZING BPM + KEY %d / %d",
                  a.cpuPct, a.ramMb, a.bpmDone.load(), a.bpmTotal.load());
     else
         swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB", a.cpuPct, a.ramMb);
@@ -1570,7 +1643,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                                    : 440.f,
                     ph = tags      ? 232.f
                          : reqs    ? 96.f + (std::max)(nReq, 1) * 32.f
-                         : columns ? 292.f
+                         : columns ? 322.f
                                    : 132.f;
         const D2D1_RECT_F p = rc((W - pw) / 2, (H - ph) / 2, pw, ph);
         ui.rect(p, cPanel, 10);
@@ -1644,10 +1717,11 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                           cGreen, true))
                 a.prompt = App::Prompt::None;
         } else if (columns) {
-            static const wchar_t* names[6] = {L"Title", L"Artist", L"Genre",
-                                              L"Year",  L"BPM",    L"Time"};
+            static const wchar_t* names[App::kNumCols] = {
+                L"Title", L"Artist", L"Genre", L"Year",
+                L"BPM",   L"Time",   L"Key"};
             float cy2 = p.top + 34;
-            for (int k = 0; k < 6; ++k) {
+            for (int k = 0; k < App::kNumCols; ++k) {
                 const int id = a.colSeq[k];
                 if (ui.button(520 + k, rc(p.left + 16, cy2, 28, 24), L"▴",
                               cAccent) &&
@@ -1655,7 +1729,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                     std::swap(a.colSeq[k], a.colSeq[k - 1]);
                 if (ui.button(530 + k, rc(p.left + 48, cy2, 28, 24), L"▾",
                               cAccent) &&
-                    k < 5)
+                    k < App::kNumCols - 1)
                     std::swap(a.colSeq[k], a.colSeq[k + 1]);
                 ui.text(rc(p.left + 88, cy2, 120, 24), names[id], 13,
                         a.colShow[id] ? cText : cDim, 0, a.colShow[id]);

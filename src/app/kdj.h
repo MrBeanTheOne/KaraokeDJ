@@ -31,6 +31,7 @@
 #include "library/db.h"
 #include "library/media_query.h"
 #include "library/scanner.h"
+#include "media/key_detect.h"
 #include "media/media_paths.h"
 #include "media/mf_decoder.h"
 #include "media/mf_video_decoder.h"
@@ -150,12 +151,17 @@ struct App {
     std::deque<Match> queue;
     int selLib = -1, selQueue = -1;
     std::set<int> selRows;    // multi-selection (shift/ctrl click) in the browser
-    // Browser columns: kColNames order = TITLE ARTIST GENRE YEAR BPM TIME.
+    // Browser columns, indexed by column id:
+    // 0 TITLE 1 ARTIST 2 GENRE 3 YEAR 4 BPM 5 TIME 6 KEY.
     // colSeq = display order (values are column ids), colShow = visibility,
     // colFrac = width shares (normalized over the visible set).
-    int colSeq[6] = {0, 1, 2, 3, 4, 5};
-    bool colShow[6] = {true, true, true, true, true, true};
-    float colFrac[6] = {0.34f, 0.24f, 0.13f, 0.09f, 0.09f, 0.11f};
+    // kCols must grow with this — see loadSettings, which back-fills ids a
+    // saved layout from an older build never mentioned.
+    static constexpr int kNumCols = 7;
+    int colSeq[kNumCols] = {0, 1, 2, 3, 4, 6, 5};
+    bool colShow[kNumCols] = {true, true, true, true, true, true, true};
+    float colFrac[kNumCols] = {0.32f, 0.23f, 0.12f, 0.08f,
+                               0.08f, 0.10f, 0.07f};
     int colDrag = -1; // index into the VISIBLE sequence being resized
     float libScroll = 0, queueScroll = 0, sideScroll = 0;
     bool sidebarOpen = true, queueOpen = true;
@@ -174,7 +180,8 @@ struct App {
     Clock::time_point cpuAt{};
     int scrubDeck = -1; // deck being waveform-scrubbed
     Clock::time_point lastScrub{};
-    int sortCol = 0; // 0 artist 1 title 2 genre 3 year
+    int sortCol = 0; // searchMedia kCols: 0 artist 1 title 2 genre 3 year
+                     // 4 bpm 5 duration 6 key
     bool sortAsc = true;
     std::wstring status = L"ready";
 
@@ -265,7 +272,7 @@ struct App {
     };
     enum class ConfirmAction {
         None, RemoveFolder, DeletePlaylist, CleanMissing, ClearRotation,
-        ClearHistory, ClearQueue
+        ClearHistory, ClearQueue, QuitApp
     };
     Prompt prompt = Prompt::None;
     Match rotAddPending; // NewSinger: the track being added
@@ -315,8 +322,12 @@ struct App {
     std::thread ytThread;
     std::atomic<bool> ytBusy{false}, ytDone{false};
     std::wstring ytPath, ytError;
+    std::wstring ytDir; // download folder (yt_dir); empty = %APPDATA% cache
 
     MenuReq menu;
+    bool quitConfirmed = false; // the close warning was accepted
+    bool winMax = true;  // open maximized (win_max); win_w/h are the size
+                         // the window restores to when un-maximized
     float uiScale = 1.f; // physical px per DIP, set from Ui each frame
 };
 
@@ -374,6 +385,7 @@ void dropOnDeck(App& a, int d, const Match& m);
 void clearDeckSlot(App& a, int d);
 void stopDeck(App& a, int d);
 void seekFrac(App& a, int d, float frac);
+void applyCueIn(App& a, int d); // re-cue after the START marker moves
 void setSingerStatus(App& a, int64_t itemId, const char* status);
 void singNow(App& a, const SingerRow& row);
 void addToRotationAs(App& a, const Match& m, const std::wstring& singer);
@@ -405,7 +417,7 @@ std::wstring pickProfile(HWND owner, bool save); // .kdjprofile open/save
 bool exportProfile(App& a, const std::wstring& file);
 bool importProfile(App& a, const std::wstring& file);
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
-std::wstring youtubeCacheDir();
+std::wstring youtubeCacheDir(const std::wstring& custom = L"");
 void startYoutube(App& a, std::wstring url);
 
 void scrollbar(App& a, Ui& ui, int id, const D2D1_RECT_F& list, size_t count,

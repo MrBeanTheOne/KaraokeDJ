@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(karaoke-dj VERSION 1.1.8 LANGUAGES C CXX)
+project(karaoke-dj VERSION 1.1.9 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +15,7 @@ add_executable(harness
   src/media/mf_decoder.cpp
   src/playback/deck.cpp
   src/playback/mixer.cpp
+  src/playback/pitch_shifter.cpp
   src/audio/wasapi_out.cpp)
 target_include_directories(harness PRIVATE src)
 target_link_libraries(harness PRIVATE mfplat mfreadwrite mfuuid ole32 avrt psapi)
@@ -28,6 +29,7 @@ add_executable(video_harness
   src/media/mf_video_decoder.cpp
   src/playback/deck.cpp
   src/playback/mixer.cpp
+  src/playback/pitch_shifter.cpp
   src/audio/wasapi_out.cpp
   src/video/video_window.cpp)
 target_include_directories(video_harness PRIVATE src external/qrcodegen)
@@ -36,6 +38,13 @@ target_link_libraries(video_harness PRIVATE miniz mfplat mfreadwrite mfuuid ole3
 
 add_executable(gen_test_video tools/gen_test_video.cpp)
 target_link_libraries(gen_test_video PRIVATE mfplat mfreadwrite mfuuid ole32)
+
+# Key-detector tuning rig (see src/media/key_detect.cpp).
+add_executable(dump_chroma tools/dump_chroma.cpp
+  src/media/key_detect.cpp
+  src/media/mf_decoder.cpp)
+target_include_directories(dump_chroma PRIVATE src)
+target_link_libraries(dump_chroma PRIVATE mfplat mfreadwrite mfuuid ole32)
 
 add_library(miniz STATIC external/miniz/miniz.c)
 target_include_directories(miniz PUBLIC external/miniz)
@@ -66,10 +75,12 @@ add_executable(karaoke_dj WIN32
   src/karaoke/cdg_renderer.cpp
   src/media/mf_decoder.cpp
   src/media/mf_video_decoder.cpp
+  src/media/key_detect.cpp
   src/media/waveform.cpp
   src/media/zip_media.cpp
   src/playback/deck.cpp
   src/playback/mixer.cpp
+  src/playback/pitch_shifter.cpp
   src/audio/wasapi_out.cpp
   src/video/video_window.cpp
   src/web/request_server.cpp
@@ -79,7 +90,8 @@ target_compile_definitions(karaoke_dj PRIVATE KDJ_VERSION="${PROJECT_VERSION}")
 target_link_libraries(karaoke_dj PRIVATE sqlite3 miniz normaliz psapi mfplat mfreadwrite mfuuid ole32 avrt d3d11
   d2d1 dwrite shell32 propsys ws2_32 iphlpapi windowscodecs winhttp)
 
-add_executable(test_core tests/unit/test_core.cpp src/karaoke/cdg_renderer.cpp)
+add_executable(test_core tests/unit/test_core.cpp src/karaoke/cdg_renderer.cpp
+  src/playback/pitch_shifter.cpp src/media/key_detect.cpp)
 target_include_directories(test_core PRIVATE src)
 
 # ------------------------------------------------------------------ installer

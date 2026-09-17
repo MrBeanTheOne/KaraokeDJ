@@ -3,10 +3,16 @@
 #include <string>
 #include <thread>
 
-// One-shot BPM detection for the background library analyzer: decodes a
-// ~100 s segment from a quarter of the way in (the caller's thread must have
-// COM initialized). Returns 0 when the tempo can't be pinned down.
-int analyzeBpm(const std::wstring& path);
+// One-shot tempo + musical key detection for the background library analyzer:
+// decodes a ~100 s segment from a quarter of the way in, once, and measures
+// both from it (the caller's thread must have COM initialized). bpm comes back
+// 0 when the tempo can't be pinned down, key -1 when there is no clear key.
+//
+// Returns FALSE when the file could not be decoded at all — an unplugged
+// drive, a missing codec. Callers must leave the stored values alone in that
+// case: writing a "nothing found" result would permanently retire a track
+// that was only temporarily unreachable.
+bool analyzeTrack(const std::wstring& path, int& bpm, int& key);
 
 // Decodes a whole track on a background thread into kBins peak values for the
 // deck waveform strip. Bins become valid left-to-right while scanning; the UI
@@ -26,12 +32,16 @@ public:
     float loudness() const { return loud_.load(std::memory_order_acquire); }
     // Detected tempo (rounded BPM), 0 until the scan finishes or if unsure.
     int bpm() const { return bpm_.load(std::memory_order_acquire); }
+    // Detected musical key in KeyDetector terms, -1 until the scan finishes
+    // or when the track has no clear key.
+    int musicKey() const { return key_.load(std::memory_order_acquire); }
 
 private:
     std::atomic<float> bins_[kBins]{};
     std::atomic<int> ready_{0};
     std::atomic<float> loud_{0.f};
     std::atomic<int> bpm_{0};
+    std::atomic<int> key_{-1};
     std::atomic<bool> cancel_{false};
     std::thread th_;
 };

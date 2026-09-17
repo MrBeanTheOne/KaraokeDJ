@@ -37,11 +37,11 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
         const std::string cs = getSetting(a.db, "columns", "");
         int idx = 0;
         size_t pos = 0;
-        while (idx < 6 && pos < cs.size()) {
+        while (idx < App::kNumCols && pos < cs.size()) {
             int id = 0, show = 1;
             float frac = 0.1f;
             if (sscanf_s(cs.c_str() + pos, "%d:%d:%f", &id, &show, &frac) == 3 &&
-                id >= 0 && id < 6) {
+                id >= 0 && id < App::kNumCols) {
                 a.colSeq[idx] = id;
                 a.colShow[id] = show != 0;
                 a.colFrac[id] = std::clamp(frac, 0.04f, 0.9f);
@@ -50,6 +50,23 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
             const size_t c = cs.find(',', pos);
             if (c == std::string::npos) break;
             pos = c + 1;
+        }
+        if (idx > 0) {
+            // Rebuild the order as a proper permutation: the ids the saved
+            // layout named, in its order, then any it never mentioned. A
+            // layout written by an older build lists fewer columns than we
+            // have now, and a new column must appear rather than vanish
+            // behind a duplicated id.
+            int seq[App::kNumCols], n = 0;
+            bool seen[App::kNumCols] = {};
+            for (int k = 0; k < idx; ++k)
+                if (!seen[a.colSeq[k]]) {
+                    seen[a.colSeq[k]] = true;
+                    seq[n++] = a.colSeq[k];
+                }
+            for (int id = 0; id < App::kNumCols; ++id)
+                if (!seen[id]) seq[n++] = id;
+            for (int k = 0; k < App::kNumCols; ++k) a.colSeq[k] = seq[k];
         }
         bool vis = false; // never end up with zero visible columns
         for (bool b : a.colShow) vis |= b;
@@ -61,6 +78,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.lang = getSetting(a.db, "lang", "0") == "1" ? 1 : 0;
     uiSetLanguage(a.lang);
     a.watchOn = getSetting(a.db, "watch_folders", "0") == "1";
+    a.ytDir = wide(getSetting(a.db, "yt_dir", "")); // empty = the %APPDATA% cache
     a.webOn = getSetting(a.db, "web_on", "0") == "1"; // strictly opt-in
     a.webPass = wide(getSetting(a.db, "web_pass", ""));
     a.idleSub = wide(getSetting(a.db, "idle_sub", ""));
@@ -99,6 +117,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     }
     a.videoFit = std::clamp(atoi(getSetting(a.db, "video_fit", "0").c_str()), 0, 2);
     a.audioDevice = getSetting(a.db, "audio_device", "");
+    a.winMax = getSetting(a.db, "win_max", "1") == "1"; // full screen by default
     winW = UINT((std::max)(900, atoi(getSetting(a.db, "win_w", "0").c_str())));
     winH = UINT((std::max)(600, atoi(getSetting(a.db, "win_h", "0").c_str())));
 }
@@ -119,7 +138,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     {
         std::string cs;
         char cb[48];
-        for (int k = 0; k < 6; ++k) {
+        for (int k = 0; k < App::kNumCols; ++k) {
             const int id = a.colSeq[k];
             snprintf(cb, 48, "%s%d:%d:%.3f", k ? "," : "", id,
                      a.colShow[id] ? 1 : 0, a.colFrac[id]);
@@ -151,6 +170,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     }
     setSetting(a.db, "video_fit", std::to_string(a.videoFit));
     setSetting(a.db, "audio_device", a.audioDevice);
+    setSetting(a.db, "win_max", a.winMax ? "1" : "0");
     setSetting(a.db, "win_w", std::to_string(winW));
     setSetting(a.db, "win_h", std::to_string(winH));
 }
@@ -335,7 +355,7 @@ void reloadBrowser(App& a) {
         a.results.clear();
         Db::Stmt q;
         a.db.prepare(q, "SELECT m.id, m.artist, m.title, m.path, m.type, m.duration_ms, "
-                        "m.genre, m.year, m.bpm "
+                        "m.genre, m.year, m.bpm, IFNULL(m.music_key,0) "
                         "FROM playlist_item pi JOIN media_item m ON m.id=pi.media_id "
                         "WHERE pi.playlist_id=?1 ORDER BY pi.position");
         q.bind(1, a.navPlaylist);
@@ -345,6 +365,7 @@ void reloadBrowser(App& a) {
             m.genre = wide(q.colText(6));
             m.year = q.colInt(7);
             m.bpm = q.colInt(8);
+            m.musicKey = q.colInt(9);
             if (!termLower.empty() &&
                 foldW(m.label + L" " + m.path).find(termLower) == std::wstring::npos)
                 continue;
@@ -564,7 +585,8 @@ void startBpmAnalysis(App& a) {
             {
                 Db::Stmt q; // zips would need extraction first; the deck
                             // scan covers those on first play
-                db.prepare(q, "SELECT id, path FROM media_item WHERE bpm=0 "
+                db.prepare(q, "SELECT id, path FROM media_item "
+                              "WHERE (bpm=0 OR IFNULL(music_key,0)=0) "
                               "AND type IN ('audio','mp3g','video')");
                 while (q.step())
                     rows.push_back({q.colInt(0), wide(q.colText(1))});
@@ -572,11 +594,23 @@ void startBpmAnalysis(App& a) {
             a.bpmTotal.store(int(rows.size()));
             for (const Row& r : rows) {
                 if (a.bpmStop.load()) break;
-                const int bpm = analyzeBpm(r.path);
-                Db::Stmt u;
-                db.prepare(u,
-                           "UPDATE media_item SET bpm=?2 WHERE id=?1 AND bpm=0");
-                u.bind(1, r.id).bind(2, int64_t(bpm > 0 ? bpm : -1));
+                int bpm = 0, key = -1;
+                // One decode, both answers. A file we couldn't open at all
+                // (unplugged drive) is left untouched so it gets another go
+                // next launch — recording "nothing found" would retire it
+                // for good.
+                if (!analyzeTrack(r.path, bpm, key)) {
+                    a.bpmDone.fetch_add(1);
+                    continue;
+                }
+                Db::Stmt u; // each column only fills its own untouched slot
+                db.prepare(u, "UPDATE media_item SET "
+                              "bpm = CASE WHEN bpm=0 THEN ?2 ELSE bpm END, "
+                              "music_key = CASE WHEN IFNULL(music_key,0)=0 "
+                              "THEN ?3 ELSE music_key END WHERE id=?1");
+                u.bind(1, r.id)
+                    .bind(2, int64_t(bpm > 0 ? bpm : -1))
+                    .bind(3, int64_t(keyToDb(key)));
                 u.step();
                 a.bpmDone.fetch_add(1);
             }
@@ -888,7 +922,17 @@ std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode) {
     return wide(out);
 }
 
-std::wstring youtubeCacheDir() {
+std::wstring youtubeCacheDir(const std::wstring& custom) {
+    // Operator-chosen folder (settings): point it at a library folder and the
+    // download is just another track the watcher/import picks up.
+    if (!custom.empty()) {
+        CreateDirectoryW(custom.c_str(), nullptr); // no-op when it exists
+        const DWORD at = GetFileAttributesW(custom.c_str());
+        if (at != INVALID_FILE_ATTRIBUTES && (at & FILE_ATTRIBUTE_DIRECTORY))
+            return custom;
+        // Unplugged drive, or a path that came over in someone else's profile:
+        // fall through rather than hand yt-dlp a folder that isn't there.
+    }
     wchar_t buf[MAX_PATH]{};
     const DWORD n = GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
     std::wstring dir = n ? std::wstring(buf) + L"\\KaraokeDJ" : L".";
@@ -909,8 +953,8 @@ void startYoutube(App& a, std::wstring url) {
               url.end());
     a.ytBusy.store(true);
     a.status = L"YouTube: downloading…  " + url;
-    a.ytThread = std::thread([&a, url]() {
-        const std::wstring dir = youtubeCacheDir();
+    const std::wstring dir = youtubeCacheDir(a.ytDir); // read on the UI thread
+    a.ytThread = std::thread([&a, url, dir]() {
         // MP4 (H.264+AAC) so Media Foundation plays it like any library video.
         const std::wstring cmd =
             L"yt-dlp.exe --no-playlist --encoding utf-8 "

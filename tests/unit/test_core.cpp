@@ -1,4 +1,5 @@
-// Minimal self-checks for the lock-free ring, fade curves and CDG decoding.
+// Minimal self-checks for the lock-free ring, fade curves, the key-change
+// pitch shifter and CDG decoding.
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -8,7 +9,17 @@
 #include "audio/ring_buffer.h"
 #include "karaoke/cdg_renderer.h"
 #include "media/mf_video_decoder.h" // VideoFrame
+#include "media/key_detect.h"
 #include "playback/fade.h"
+#include "playback/pitch_shifter.h"
+
+// Dominant frequency of a stereo buffer, by zero crossings of the left channel.
+static double zcFreq(const std::vector<float>& x, size_t rate) {
+    size_t cross = 0;
+    for (size_t f = 1; f < x.size() / 2; ++f)
+        if ((x[(f - 1) * 2] < 0.f) != (x[f * 2] < 0.f)) ++cross;
+    return double(cross) * double(rate) / (2.0 * double(x.size() / 2));
+}
 
 static std::vector<uint8_t> cdgPacket(uint8_t instruction,
                                       const uint8_t (&data)[16]) {
@@ -89,6 +100,72 @@ int main() {
         assert(!r.renderTo(f, 3.0 / 300.0)); // no new packets -> unchanged
         assert(r.renderTo(f, 1.0 / 300.0)); // rewind replays and redraws
         assert(pxAt(0, 0) == 0xFF000000u);  // only palette applied: still black
+    }
+
+    { // key change: pitch moves, length does not
+        constexpr size_t kRate = 48000, kBlock = 480, kBlocks = 200; // 2 s
+        auto run = [&](int semi) {
+            PitchShifter ps;
+            ps.setSemitones(semi, 2);
+            std::vector<float> tail;
+            for (size_t b = 0; b < kBlocks; ++b) {
+                std::vector<float> blk(kBlock * 2);
+                for (size_t f = 0; f < kBlock; ++f) {
+                    const double t = double(b * kBlock + f) / double(kRate);
+                    const float v = float(std::sin(2.0 * 3.14159265 * 220.0 * t));
+                    blk[f * 2] = blk[f * 2 + 1] = v;
+                }
+                ps.process(blk.data(), kBlock);
+                if (b >= kBlocks / 2) // past the priming delay
+                    tail.insert(tail.end(), blk.begin(), blk.end());
+            }
+            assert(tail.size() == kBlocks / 2 * kBlock * 2); // n in == n out
+            return zcFreq(tail, kRate);
+        };
+        const double f0 = run(0), fUp = run(12), fDn = run(-12);
+        assert(std::fabs(f0 - 220.0) < 4.0);   // key 0 is a pure bypass
+        assert(std::fabs(fUp - 440.0) < 20.0); // +12 semitones = an octave up
+        assert(std::fabs(fDn - 110.0) < 10.0); // -12 = an octave down
+    }
+
+    { // key detection: play a diatonic scale + triads, expect the right key
+        constexpr size_t kRate = 48000, kBlock = 4800;
+        // Feeds `midi` notes (one per second) and returns the detected key.
+        auto detect = [&](const std::vector<int>& midi) {
+            KeyDetector kd;
+            std::vector<float> blk(kBlock * 2);
+            size_t n = 0;
+            for (int m : midi)
+                for (int b = 0; b < 10; ++b) { // 10 blocks = 1 s per note
+                    const double f = 440.0 * std::pow(2.0, (m - 69) / 12.0);
+                    for (size_t i = 0; i < kBlock; ++i, ++n) {
+                        // fundamental + two harmonics, like a real instrument
+                        const double t = double(n) / double(kRate);
+                        const double v =
+                            std::sin(2 * 3.14159265 * f * t) +
+                            0.5 * std::sin(4 * 3.14159265 * f * t) +
+                            0.25 * std::sin(6 * 3.14159265 * f * t);
+                        blk[i * 2] = blk[i * 2 + 1] = float(v * 0.25);
+                    }
+                    kd.feed(blk.data(), kBlock);
+                }
+            return kd.result();
+        };
+        // C major scale, resolving on C (MIDI 60 = C4).
+        const int cMaj = detect({60, 62, 64, 65, 67, 69, 71, 72, 67, 64, 60,
+                                 60, 64, 67, 72, 67, 64, 60, 65, 62, 60, 60});
+        assert(cMaj == 0); // tonic C, major
+        // Same notes centred on A: the natural minor of the same scale.
+        const int aMin = detect({57, 59, 60, 62, 64, 65, 67, 69, 64, 60, 57,
+                                 57, 60, 64, 69, 64, 60, 57, 62, 59, 57, 57});
+        assert(aMin == 9 + 12); // tonic A, minor
+        assert(keyName(keyToDb(cMaj), 0) == L"C");
+        assert(keyName(keyToDb(aMin), 0) == L"Am");
+        assert(keyName(keyToDb(aMin), 2) == L"Bm");   // +2 semitones
+        assert(keyName(keyToDb(aMin), -1) == L"G#m"); // -1 semitone
+        assert(keyName(keyToDb(cMaj), 12) == L"C");   // whole octave
+        assert(keyName(0, 3).empty());                // never analysed
+        assert(keyName(-1, 3).empty());               // no clear key
     }
 
     printf("test_core OK\n");

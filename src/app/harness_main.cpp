@@ -44,6 +44,7 @@ int wmain(int argc, wchar_t** argv) {
     int transitions = 20;
     bool automix = false; // transition when the active track nears its end
     bool testPauseSeek = false; // scripted FR-001 transport check
+    int keySemi = 0;            // key change applied to every deck it loads
     FadeCurve curve = FadeCurve::EqualPower;
 
     for (int i = 1; i < argc; ++i) {
@@ -52,6 +53,7 @@ int wmain(int argc, wchar_t** argv) {
         if (a == L"--fade") fadeSec = _wtof(next().c_str());
         else if (a == L"--interval") intervalSec = _wtof(next().c_str());
         else if (a == L"--transitions") transitions = _wtoi(next().c_str());
+        else if (a == L"--key") keySemi = _wtoi(next().c_str());
         else if (a == L"--automix") automix = true;
         else if (a == L"--test-pause-seek") testPauseSeek = true;
         else if (a == L"--curve") {
@@ -63,7 +65,8 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (files.size() < 2) {
         wprintf(L"usage: harness <file1> <file2> [...] [--fade s] [--interval s] "
-                L"[--transitions n] [--automix] [--curve equalpower|linear|fastcut|slowblend]\n");
+                L"[--transitions n] [--automix] [--key semitones] "
+                L"[--curve equalpower|linear|fastcut|slowblend]\n");
         return 2;
     }
 
@@ -86,6 +89,7 @@ int wmain(int argc, wchar_t** argv) {
             decks[d]->stopAndUnload();
             return false;
         }
+        decks[d]->key.setSemitones(keySemi, kCh); // load() zeroed it
         return true;
     };
     auto postFade = [&](int to, double sec) {

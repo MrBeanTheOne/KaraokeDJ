@@ -5,6 +5,7 @@
 #include <thread>
 
 #include "audio/ring_buffer.h"
+#include "playback/pitch_shifter.h"
 
 enum class DeckState { Empty, Loading, Ready, Error };
 
@@ -50,6 +51,10 @@ public:
     std::atomic<bool> decodeDone{false}; // no more data coming (file fully decoded)
     std::atomic<bool> eos{false};        // decodeDone and ring drained: playback over
     SpscRing<float> ring;
+    // Key change. Idle (and free) until someone dials a semitone in; applied
+    // by the mixer right after pull(). Reset to 0 by every load — key belongs
+    // to the singer's take, not to the deck.
+    PitchShifter key;
 
 private:
     void workerMain(std::wstring path, bool loopFile);

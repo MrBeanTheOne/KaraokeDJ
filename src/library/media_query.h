@@ -10,6 +10,7 @@ struct Match {
     std::wstring label; // "artist - title" (or just title)
     std::wstring artist, title, genre;
     int64_t year = 0, bpm = 0;
+    int64_t musicKey = 0; // media_item.music_key (see key_detect.h)
     std::wstring path;
     std::string type; // audio | mp3g | video
     int64_t durMs = 0;

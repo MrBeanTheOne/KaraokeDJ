@@ -206,17 +206,18 @@ void addToPlaylistDb(App& a, int64_t playlistId, const Match& m) {
 void handleMenu(App& a, HWND hwnd) {
     const MenuReq req = a.menu;
     a.menu = {};
-    if (req.index <= -2 && req.index >= -6) { // folder/image/profile pickers
+    if (req.index <= -2 && req.index >= -7) { // folder/image/profile pickers
         if (a.pickThread.joinable()) return; // picker already open
         a.pickKind = req.index == -3   ? 1
                      : req.index == -4 ? 2
                      : req.index == -5 ? 3   // export profile (save)
                      : req.index == -6 ? 4   // import profile (open)
+                     : req.index == -7 ? 5   // youtube download folder
                                        : 0;
         const int kind = a.pickKind;
         a.pickThread = std::thread([&a, hwnd, kind]() {
             CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-            a.pickResult = kind == 0   ? pickFolder(hwnd)
+            a.pickResult = kind == 0 || kind == 5 ? pickFolder(hwnd)
                            : kind == 3 ? pickProfile(hwnd, true)
                            : kind == 4 ? pickProfile(hwnd, false)
                                        : pickFile(hwnd);
@@ -357,6 +358,7 @@ void handleMenu(App& a, HWND hwnd) {
                                 "WHERE id=?1");
                 q.bind(1, m.id).bind(2, a.cueIn[d]).bind(3, a.cueOut[d]);
                 q.step();
+                applyCueIn(a, d); // the deck follows the marker immediately
                 a.status = sel == 2 ? L"markers cleared: " + m.label
                            : sel == 0
                                ? L"START marker @ " + fmtTime(double(ms) / 1000) +

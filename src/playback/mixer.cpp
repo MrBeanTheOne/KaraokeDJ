@@ -37,6 +37,9 @@ void Mixer::render(float* out, uint32_t frames, uint32_t ch) {
                 if (!decks_[d]->decodeDone.load(std::memory_order_relaxed))
                     underruns.fetch_add(1, std::memory_order_relaxed);
             }
+            // Key change, when one is dialled in: pitch only, frames in ==
+            // frames out, so nothing downstream (or the deck clock) notices.
+            if (decks_[d]->key.semitones()) decks_[d]->key.process(buf, frames);
             float pk = 0.f;
             for (size_t i = 0; i < n; ++i) {
                 const float v = buf[i] < 0 ? -buf[i] : buf[i];

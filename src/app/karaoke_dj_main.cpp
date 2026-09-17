@@ -214,6 +214,17 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         break;
     case WM_CLOSE:
+        // Closing ends the night: warn first, because it clears the decks and
+        // whatever is still queued. WM_DESTROY (and a confirmed quit) still
+        // goes straight through.
+        if (g_app && !g_app->quitConfirmed) {
+            askConfirm(*g_app, App::ConfirmAction::QuitApp, L"CLOSE KARAOKE DJ?",
+                       L"The decks and the queue will be cleared.",
+                       L"Your library, playlists, rotation and history are kept.");
+            return 0;
+        }
+        g_closed = true;
+        return 0;
     case WM_DESTROY:
         g_closed = true;
         return 0;
@@ -262,10 +273,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     a.db.open(a.dbPath);
     UINT winW = 0, winH = 0;
     loadSettings(a, winW, winH);
-    if (winW <= 900) { // first run: size to ~80% of the primary work area
+    {
+        // First run — or a restore size an older build saved off a maximized
+        // window, which would make "restore" do nothing. Either way: ~80% of
+        // the primary work area.
         const int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
-        winW = UINT(sw * 0.78);
-        winH = UINT(sh * 0.82);
+        if (winW <= 900 || int(winW) >= sw || int(winH) >= sh) {
+            winW = UINT(sw * 0.78);
+            winH = UINT(sh * 0.82);
+        }
     }
 
     WNDCLASSW wc{};
@@ -282,7 +298,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     if (!hwnd) return 1;
     applyDarkTitlebar(hwnd);
     DragAcceptFiles(hwnd, TRUE);
-    ShowWindow(hwnd, SW_SHOW);
+    // Opens filling the screen unless the operator left it un-maximized last
+    // time; win_w/win_h are then the size it restores to.
+    ShowWindow(hwnd, a.winMax ? SW_SHOWMAXIMIZED : SW_SHOW);
 
     if (!a.out.start(kRate, kCh, a.mixer, wide(a.audioDevice))) {
         MessageBoxW(hwnd, L"WASAPI audio init failed", L"Karaoke DJ", MB_ICONERROR);
@@ -441,6 +459,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                         a.status = L"waiting-screen background set";
                     }
                     setSetting(a.db, "idle_bg", utf8(a.idleBgPath));
+                } else if (a.pickKind == 5) { // YouTube download folder
+                    a.ytDir = a.pickResult;
+                    setSetting(a.db, "yt_dir", utf8(a.ytDir));
+                    a.status = L"YouTube downloads → " + a.ytDir;
                 } else {
                     startImport(a, a.pickResult);
                 }
@@ -580,6 +602,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                 a.cpuAt = pnow;
             }
         }
+        if (a.quitConfirmed) break; // close warning accepted: decks already wiped
         if (a.settingsOpenReq) { // header button: toggle the settings window
             a.settingsOpenReq = false;
             if (a.settingsWnd) PostMessageW(a.settingsWnd, WM_CLOSE, 0, 0);
@@ -653,8 +676,13 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         a.settingsWnd = nullptr;
     }
     g_app = nullptr;
-    RECT wr{};
-    GetWindowRect(hwnd, &wr);
+    // Placement, not the window rect: on a maximized window GetWindowRect
+    // returns the maximized size, which would then become the restore size.
+    WINDOWPLACEMENT wp{sizeof(wp)};
+    GetWindowPlacement(hwnd, &wp);
+    a.winMax = wp.showCmd == SW_SHOWMAXIMIZED ||
+               (wp.showCmd == SW_SHOWMINIMIZED && (wp.flags & WPF_RESTORETOMAXIMIZED));
+    const RECT& wr = wp.rcNormalPosition;
     saveSettings(a, UINT(wr.right - wr.left), UINT(wr.bottom - wr.top));
     saveSnapshot(a); // final state, then mark the exit graceful
     setSetting(a.db, "snap_clean", "1");

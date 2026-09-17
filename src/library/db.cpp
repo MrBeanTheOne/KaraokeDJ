@@ -120,6 +120,9 @@ bool Db::open(const std::wstring& path) {
     exec("ALTER TABLE media_item ADD COLUMN cue_in_ms INTEGER DEFAULT 0;");
     exec("ALTER TABLE media_item ADD COLUMN cue_out_ms INTEGER DEFAULT 0;");
     exec("ALTER TABLE media_item ADD COLUMN bpm INTEGER DEFAULT 0;");
+    // music_key: 0 = never analysed, -1 = analysed with no clear key,
+    // 1..24 = tonic 0..11 (C..B) major then the same twelve minor, all +1.
+    exec("ALTER TABLE media_item ADD COLUMN music_key INTEGER DEFAULT 0;");
     // Pre-folded search text (title\nartist\npath): a 100k-row library
     // cannot afford the NFD fold() per row per keystroke, so it's folded
     // once here / at insert and searched as plain text. Kept in sync by the

@@ -19,6 +19,8 @@ bool Deck::load(const std::wstring& path, bool loopFile) {
     pendingSeekHns_.store(-1);
     framesPlayed.store(0);
     totalFrames.store(0);
+    key.setSemitones(0, ch_);
+    key.reset();
     ring.clear();
     state_.store(DeckState::Loading, std::memory_order_release);
     worker_ = std::thread(&Deck::workerMain, this, path, loopFile);
@@ -30,6 +32,10 @@ void Deck::stopAndUnload() {
     quit_.store(true);
     if (worker_.joinable()) worker_.join();
     ring.clear();
+    // An emptied deck has no clock: leaving these set made a cleared slot keep
+    // drawing the retired track's elapsed/remaining time and its markers.
+    framesPlayed.store(0);
+    totalFrames.store(0);
     eos.store(false);
     decodeDone.store(false);
     state_.store(DeckState::Empty, std::memory_order_release);
@@ -38,6 +44,7 @@ void Deck::stopAndUnload() {
 void Deck::seek(double sec) {
     const bool wasPaused = paused.exchange(true); // stop the mixer pulling
     std::this_thread::sleep_for(30ms);            // let the audio thread step out
+    key.reset(); // don't stitch post-seek audio onto the pre-seek tail
     pendingSeekHns_.store(int64_t(sec * 10000000.0));
     for (int t = 0; t < 500 && pendingSeekHns_.load() >= 0; t += 5)
         std::this_thread::sleep_for(5ms); // worker applies it

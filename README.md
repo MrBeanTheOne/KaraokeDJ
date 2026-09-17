@@ -33,13 +33,21 @@ Settings) and points you at the download when one exists.
 - **Hardware video decode** (Media Foundation + D3D11): smooth video karaoke
   on a weak laptop CPU.
 - Plays **MP3+G** (mp3/cdg pairs), **karaoke ZIPs**, **video files**, plain
-  audio — and **YouTube links** pasted straight into the search box.
-- **Start/end markers** per song: drag the handles, or let smart automix skip
-  silent intros and outros. Saved per track.
+  audio — and **YouTube links** pasted straight into the search box (point the
+  download folder at a library folder in Settings and they import themselves).
+- **Key change** on each deck for singers who need the song a step down: the
+  readout shows the song's **actual musical key** (detected automatically in
+  the background) and `−`/`+` move it, so you set *Am → Gm*, not "minus two".
+  Pitch only — the tempo never moves, so the lyrics stay in sync. Click the
+  readout to snap back to the original key. Idle until you use it, so nothing
+  changes for the songs you play as-is.
+- **Start/end markers** per song: drag the handles and the deck re-cues as you
+  move them, or let smart automix skip silent intros and outros. Saved per
+  track.
 - **Auto volume leveling** — loudness is measured per track and matched, so
   nobody gets blasted between songs.
-- **BPM everywhere**: read from tags on import, detected in the background
-  for everything else.
+- **BPM and musical key everywhere**: BPM read from tags on import; both
+  detected in the background for everything else, in a single pass per track.
 
 ### 📚 A library that keeps up
 - Fast parallel import with live progress; closing mid-import is safe, and a
@@ -50,8 +58,8 @@ Settings) and points you at the download when one exists.
   everything, and an optional watcher imports new files by itself seconds
   after they land on disk.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
-- Sortable, resizable, reorderable columns — right-click the header to choose
-  what shows.
+- Sortable, resizable, reorderable columns (title, artist, genre, year, BPM,
+  time, **key**) — right-click the header to choose what shows.
 - Playlists with drag-reorder, played-tonight dots, multi-select drag to
   queue.
 - **Tag editor**: right-click any track to fix artist/title/genre/year — in

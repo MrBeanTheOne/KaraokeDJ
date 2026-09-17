@@ -6,6 +6,23 @@
 
 // ------------------------------------------------------------ engine control
 
+// Re-cue a deck to its START marker. EVERY place that moves cueIn routes
+// through here: moving a marker used to only repaint and save it, so a
+// correction made after the track was loaded did nothing until the next load.
+// Never yanks a deck that is audibly playing — only one that is cued, or one
+// still inside the intro it was about to skip anyway.
+void applyCueIn(App& a, int d) {
+    if (a.label[d].empty()) return;
+    const double sec = double((std::max)(int64_t(0), a.cueIn[d])) / 1000.0;
+    const uint64_t target = uint64_t(sec * kRate);
+    const uint64_t now = a.decks[d]->framesPlayed.load();
+    if ((now > target ? now - target : target - now) < kRate / 4) return;
+    if (a.decks[d]->playing.load() && now >= target) return;
+    if (a.pendingFade == d || a.mixer.fadeTo.load() == d) return;
+    a.decks[d]->seek(sec);
+    if (a.hasVid[d]) a.vdec[d].seek(int64_t(a.cueIn[d]) * 10000);
+}
+
 bool loadTo(App& a, int d, const Match& m) {
     std::wstring audio, cdgPath;
     if (!resolveMedia(m.path, audio, cdgPath)) {
@@ -27,6 +44,10 @@ bool loadTo(App& a, int d, const Match& m) {
     a.cueIn[d] = a.cueOut[d] = 0;
     a.cueFromDb[d] = false;
     a.smartCueSet[d] = false;
+    // The deck owns the track from here on. This MUST precede applyCueIn:
+    // it treats an empty label as "nothing loaded" and would skip the seek.
+    a.label[d] = m.label;
+    a.deckMatch[d] = m;
     if (m.id) { // song start/end markers (set via waveform right-click)
         Db::Stmt q;
         a.db.prepare(q, "SELECT cue_in_ms, cue_out_ms FROM media_item WHERE id=?1");
@@ -36,13 +57,8 @@ bool loadTo(App& a, int d, const Match& m) {
             a.cueOut[d] = q.colInt(1);
         }
         a.cueFromDb[d] = a.cueIn[d] > 0 || a.cueOut[d] > 0;
-        if (a.cueIn[d] > 500) {
-            a.decks[d]->seek(double(a.cueIn[d]) / 1000.0);
-            if (a.hasVid[d]) a.vdec[d].seek(a.cueIn[d] * 10000);
-        }
+        applyCueIn(a, d);
     }
-    a.label[d] = m.label;
-    a.deckMatch[d] = m;
     return true;
 }
 
@@ -289,6 +305,20 @@ void commitPrompt(App& a) {
             a.queue.clear();
             a.selQueue = -1;
             a.status = L"queue cleared";
+            break;
+        case App::ConfirmAction::QuitApp:
+            // Leave nothing behind for the next launch: the decks and the
+            // queue are wiped here, so the snapshot written on the way out is
+            // empty. Crash recovery still restores an UNclean exit.
+            a.queue.clear();
+            a.selQueue = -1;
+            for (int d = 0; d < 2; ++d) {
+                a.decks[d]->playing.store(false);
+                clearDeckSlot(a, d);
+            }
+            a.mixer.activeDeck.store(-1);
+            a.pendingFade = -1;
+            a.quitConfirmed = true;
             break;
         case App::ConfirmAction::ClearHistory:
             a.db.exec("DELETE FROM play_history WHERE started_at > "
@@ -579,18 +609,7 @@ void engineTick(App& a) {
             const double outSec = (std::min)(dur, (last + 1) * binSec + 0.5);
             if (inSec > 1.0) a.cueIn[d] = int64_t(inSec * 1000);
             if (dur - outSec > 1.5) a.cueOut[d] = int64_t(outSec * 1000);
-            // Reposition a deck that is not on air — or one that IS playing
-            // but still inside the silent intro (the jump is inaudible),
-            // which happens when a track auto-starts right after a stop.
-            const bool inSilentIntro =
-                a.decks[d]->framesPlayed.load() <
-                uint64_t(a.cueIn[d]) * kRate / 1000;
-            if (a.cueIn[d] > 500 &&
-                (!a.decks[d]->playing.load() || inSilentIntro) &&
-                a.pendingFade != d && a.mixer.fadeTo.load() != d) {
-                a.decks[d]->seek(double(a.cueIn[d]) / 1000.0);
-                if (a.hasVid[d]) a.vdec[d].seek(a.cueIn[d] * 10000);
-            }
+            applyCueIn(a, d);
         }
         a.smartCueSet[d] = true;
     }
@@ -607,6 +626,21 @@ void engineTick(App& a) {
         q.step();
         a.deckMatch[d].bpm = bpm; // don't re-write every tick
         a.searchDirty = true;     // column refreshes on next reload
+    }
+
+    // Same for the detected musical key — the deck readout needs it for
+    // tracks the background analyzer hasn't reached yet.
+    for (int d = 0; d < 2; ++d) {
+        if (a.label[d].empty() || a.deckMatch[d].musicKey != 0) continue;
+        const int key = a.wave[d].musicKey();
+        if (key < 0) continue; // scan still running, or no clear key
+        a.deckMatch[d].musicKey = keyToDb(key);
+        if (!a.deckMatch[d].id) continue; // playing a file outside the library
+        Db::Stmt q;
+        a.db.prepare(q, "UPDATE media_item SET music_key=?2 WHERE id=?1 "
+                        "AND IFNULL(music_key,0)=0");
+        q.bind(1, a.deckMatch[d].id).bind(2, int64_t(a.deckMatch[d].musicKey));
+        q.step();
     }
 
     // Auto gain: once the waveform scan has measured a track's loudness,
