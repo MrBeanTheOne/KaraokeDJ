@@ -569,20 +569,21 @@ void startBpmAnalysis(App& a) {
     a.bpmStop.store(false);
     a.bpmDone.store(0);
     a.bpmTotal.store(0);
+    a.bpmWaiting.store(false);
     const std::wstring dbPath = a.dbPath;
     a.bpmBusy.store(true);
     a.bpmThread = std::thread([&a, dbPath]() {
-        // ponytail: OS background mode throttles CPU/IO scheduling; if decode
-        // ever audibly competes with playback on the gig laptop, add an
-        // "either deck live -> sleep" gate here.
-        SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        // Coordinator: builds the worklist, then hands it to a few workers.
+        // The cost of a library pass is almost entirely DECODE, which is
+        // per-file independent, so this parallelises nearly linearly — a
+        // 100k-track library is the difference between half a day and a
+        // couple of hours.
         CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        struct Row { int64_t id; std::wstring path; };
+        std::vector<Row> rows;
         {
             Db db;
             if (db.open(dbPath)) {
-            struct Row { int64_t id; std::wstring path; };
-            std::vector<Row> rows;
-            {
                 Db::Stmt q; // zips would need extraction first; the deck
                             // scan covers those on first play
                 db.prepare(q, "SELECT id, path FROM media_item "
@@ -591,32 +592,83 @@ void startBpmAnalysis(App& a) {
                 while (q.step())
                     rows.push_back({q.colInt(0), wide(q.colText(1))});
             }
-            a.bpmTotal.store(int(rows.size()));
-            for (const Row& r : rows) {
-                if (a.bpmStop.load()) break;
-                int bpm = 0, key = -1;
-                // One decode, both answers. A file we couldn't open at all
-                // (unplugged drive) is left untouched so it gets another go
-                // next launch — recording "nothing found" would retire it
-                // for good.
-                if (!analyzeTrack(r.path, bpm, key)) {
-                    a.bpmDone.fetch_add(1);
-                    continue;
-                }
-                Db::Stmt u; // each column only fills its own untouched slot
-                db.prepare(u, "UPDATE media_item SET "
-                              "bpm = CASE WHEN bpm=0 THEN ?2 ELSE bpm END, "
-                              "music_key = CASE WHEN IFNULL(music_key,0)=0 "
-                              "THEN ?3 ELSE music_key END WHERE id=?1");
-                u.bind(1, r.id)
-                    .bind(2, int64_t(bpm > 0 ? bpm : -1))
-                    .bind(3, int64_t(keyToDb(key)));
-                u.step();
-                a.bpmDone.fetch_add(1);
-            }
-            }
         }
+        a.bpmTotal.store(int(rows.size()));
+
+        // A deck at its end-of-stream is silent and stays "playing" until
+        // something replaces it, so eos must not hold the gate shut —
+        // otherwise the last song of the night stops analysis for good.
+        // Paused is silent too, and its ring is already full.
+        auto audible = [&a]() {
+            for (int d = 0; d < 2; ++d)
+                if (a.decks[d]->playing.load() && !a.decks[d]->paused.load() &&
+                    !a.decks[d]->eos.load())
+                    return true;
+            return false;
+        };
+
+        std::atomic<size_t> next{0};
+        // Half the cores, 2..4. Decode is CPU+IO and this must never be the
+        // reason a gig stutters; the gate already stops it during playback,
+        // so there is nothing to gain from being greedier.
+        const unsigned hw = std::thread::hardware_concurrency();
+        const unsigned nWorkers = std::clamp(hw ? hw / 2 : 2u, 2u, 4u);
+        std::vector<std::thread> workers;
+        for (unsigned w = 0; w < nWorkers; ++w) {
+            workers.emplace_back([&]() {
+                // Each worker owns its COM apartment, its decoder and its own
+                // SQLite connection. WAL takes one writer at a time and the
+                // connection already carries a 3 s busy timeout; the writes
+                // are one tiny UPDATE per track, so they never queue up.
+                SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+                CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                {
+                    Db db;
+                    if (db.open(dbPath)) {
+                        for (;;) {
+                            if (a.bpmStop.load()) break;
+                            // Stand down while a deck is live. Checked BEFORE
+                            // claiming an index, so a held worker never sits
+                            // on a row nobody else can take.
+                            if (audible()) {
+                                a.bpmWaiting.store(true);
+                                std::this_thread::sleep_for(250ms);
+                                continue;
+                            }
+                            a.bpmWaiting.store(false);
+                            const size_t i =
+                                next.fetch_add(1, std::memory_order_relaxed);
+                            if (i >= rows.size()) break;
+                            const Row& r = rows[i];
+                            int bpm = 0, key = -1;
+                            // One decode, both answers. A file we couldn't
+                            // open at all (unplugged drive) is left untouched
+                            // so it gets another go next launch — recording
+                            // "nothing found" would retire it for good.
+                            if (!analyzeTrack(r.path, bpm, key)) {
+                                a.bpmDone.fetch_add(1);
+                                continue;
+                            }
+                            Db::Stmt u; // each column fills only its own slot
+                            db.prepare(u,
+                                       "UPDATE media_item SET "
+                                       "bpm = CASE WHEN bpm=0 THEN ?2 ELSE bpm END, "
+                                       "music_key = CASE WHEN IFNULL(music_key,0)=0 "
+                                       "THEN ?3 ELSE music_key END WHERE id=?1");
+                            u.bind(1, r.id)
+                                .bind(2, int64_t(bpm > 0 ? bpm : -1))
+                                .bind(3, int64_t(keyToDb(key)));
+                            u.step();
+                            a.bpmDone.fetch_add(1);
+                        }
+                    }
+                }
+                CoUninitialize();
+            });
+        }
+        for (auto& t : workers) t.join(); // rows/next outlive every worker
         CoUninitialize();
+        a.bpmWaiting.store(false);
         a.bpmBusy.store(false);
         if (a.bpmTotal.load() > 0) a.bpmFinished.store(true);
     });

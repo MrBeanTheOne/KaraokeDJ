@@ -1280,34 +1280,40 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
                 }
             }
             const bool played = m.id && a.playedTonight.count(m.id);
-            if (played) ui.circle(row.left + 3, y + 12, 3, cRed);
+            // Its drive is unplugged: the row stays listed (searchable, and
+            // it comes back by itself) but reads as unavailable rather than
+            // waiting to fail on a double-click.
+            const bool gone = pathOffline(m.path, a.driveMask);
+            const D2D1_COLOR_F cMain = gone ? cGone : cText;
+            const D2D1_COLOR_F cSub = gone ? cGone : cDim;
+            if (played) ui.circle(row.left + 3, y + 12, 3, gone ? cGone : cRed);
             ui.text(rc(row.left + 8, y, 50, rowH), typeTag(m.type), 11,
-                    played ? cDim : typeColor(m.type), 0, true);
+                    gone ? cGone : played ? cDim : typeColor(m.type), 0, true);
             for (int v = 0; v < nVis; ++v) {
                 const int id = visIds[v];
                 const D2D1_RECT_F cell =
                     rc(colX[v], y, colW[v] - (colRight(id) ? 18.f : 8.f), rowH);
                 switch (id) {
                 case 0:
-                    ui.text(cell, m.title.empty() ? m.label : m.title, 13, cText,
+                    ui.text(cell, m.title.empty() ? m.label : m.title, 13, cMain,
                             0, false);
                     break;
-                case 1: ui.text(cell, m.artist, 13, cDim, 0, false); break;
-                case 2: ui.text(cell, m.genre, 12, cDim, 0, false); break;
+                case 1: ui.text(cell, m.artist, 13, cSub, 0, false); break;
+                case 2: ui.text(cell, m.genre, 12, cSub, 0, false); break;
                 case 3:
                     ui.text(cell, m.year > 0 ? std::to_wstring(m.year) : L"", 12,
-                            cDim, 0, false);
+                            cSub, 0, false);
                     break;
                 case 4:
                     ui.text(cell, m.bpm > 0 ? std::to_wstring(m.bpm) : L"", 12,
-                            cDim, 2, false);
+                            cSub, 2, false);
                     break;
                 case 5:
-                    ui.text(cell, fmtTime(double(m.durMs) / 1000), 12, cDim, 2,
+                    ui.text(cell, fmtTime(double(m.durMs) / 1000), 12, cSub, 2,
                             false);
                     break;
                 case 6: // detected musical key, blank until analysed
-                    ui.text(cell, keyName(int(m.musicKey), 0), 12, cDim, 0,
+                    ui.text(cell, keyName(int(m.musicKey), 0), 12, cSub, 0,
                             false);
                     break;
                 }
@@ -1452,8 +1458,13 @@ void drawUi(App& a, Ui& ui, float W, float H) {
     ui.text(rc(16, 8, 300, 32), L"KARAOKE DJ", 20, cAccent, 0, true);
     wchar_t perf[96];
     if (a.bpmBusy.load() && a.bpmTotal.load() > 0)
-        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB   ANALYZING BPM + KEY %d / %d",
-                 a.cpuPct, a.ramMb, a.bpmDone.load(), a.bpmTotal.load());
+        // Say WHY the count is frozen while a deck is live, or it reads as a
+        // hung analyzer for the length of the song.
+        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB   %ls %d / %d", a.cpuPct,
+                 a.ramMb,
+                 a.bpmWaiting.load() ? L"ANALYSIS HELD (PLAYING)"
+                                     : L"ANALYZING BPM + KEY",
+                 a.bpmDone.load(), a.bpmTotal.load());
     else
         swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB", a.cpuPct, a.ramMb);
     ui.text(rc(16, 40, 420, 14), perf, 10, cDim, 0, false);

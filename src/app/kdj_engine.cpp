@@ -445,6 +445,7 @@ void engineTick(App& a) {
     const auto now = Clock::now();
     const double dt = std::chrono::duration<double>(now - a.lastTick).count();
     a.lastTick = now;
+    a.driveMask = GetLogicalDrives(); // bitmask read: cheap enough per frame
 
     if (a.pendingFade >= 0 &&
         a.decks[a.pendingFade]->state() == DeckState::Empty) {

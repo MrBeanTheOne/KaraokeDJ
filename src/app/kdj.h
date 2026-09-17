@@ -70,6 +70,7 @@ static const D2D1_COLOR_F cGreen = col(0x4ADE80);
 static const D2D1_COLOR_F cRed = col(0xFF5C5C);
 static const D2D1_COLOR_F cSel = col(0x3A2026);
 static const D2D1_COLOR_F cHover = col(0x1E1E23);
+static const D2D1_COLOR_F cGone = col(0x55555C); // rows whose drive is away
 
 enum class MixMode { Fade, Smart };
 enum class NavMode { Library, Playlist, Folder, Singers, Settings, History };
@@ -257,6 +258,7 @@ struct App {
     std::thread bpmThread;
     std::atomic<bool> bpmStop{false};
     std::atomic<bool> bpmBusy{false};
+    std::atomic<bool> bpmWaiting{false}; // stood down: a deck is playing
     std::atomic<bool> bpmFinished{false};
     std::atomic<int> bpmDone{0}, bpmTotal{0};
 
@@ -328,6 +330,10 @@ struct App {
     bool quitConfirmed = false; // the close warning was accepted
     bool winMax = true;  // open maximized (win_max); win_w/h are the size
                          // the window restores to when un-maximized
+    // Mounted drive letters as a bitmask (GetLogicalDrives). Pure kernel
+    // read, no I/O and no per-file stat, so the browser can grey out every
+    // row that lives on an unplugged drive for free.
+    uint32_t driveMask = 0;
     float uiScale = 1.f; // physical px per DIP, set from Ui each frame
 };
 
@@ -353,6 +359,16 @@ inline std::wstring fmtTime(double sec) {
     wchar_t b[16];
     swprintf(b, 16, L"%d:%02d", int(sec) / 60, int(sec) % 60);
     return b;
+}
+
+// True when a path sits on a drive letter that is not currently mounted.
+// UNC and relative paths are assumed present: probing those can block, and a
+// wrong grey-out is worse than a missing one.
+inline bool pathOffline(const std::wstring& p, uint32_t driveMask) {
+    if (p.size() < 3 || p[1] != L':') return false;
+    const wchar_t c = towupper(p[0]);
+    if (c < L'A' || c > L'Z') return false;
+    return (driveMask & (1u << (c - L'A'))) == 0;
 }
 
 inline std::wstring leafName(const std::wstring& p) {

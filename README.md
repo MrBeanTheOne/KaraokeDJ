@@ -48,6 +48,9 @@ Settings) and points you at the download when one exists.
   nobody gets blasted between songs.
 - **BPM and musical key everywhere**: BPM read from tags on import; both
   detected in the background for everything else, in a single pass per track.
+  The analysis runs several tracks at once and **stands down completely while
+  a deck is playing**, so it never competes with the music — a 100k-track
+  library finishes in a couple of hours of idle time.
 
 ### 📚 A library that keeps up
 - Fast parallel import with live progress; closing mid-import is safe, and a
@@ -58,6 +61,8 @@ Settings) and points you at the download when one exists.
   everything, and an optional watcher imports new files by itself seconds
   after they land on disk.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
+- **Unplugged drive? Its tracks grey out** instead of waiting to fail when you
+  click them, and come back by themselves when the drive returns.
 - Sortable, resizable, reorderable columns (title, artist, genre, year, BPM,
   time, **key**) — right-click the header to choose what shows.
 - Playlists with drag-reorder, played-tonight dots, multi-select drag to

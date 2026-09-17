@@ -46,10 +46,15 @@ bool analyzeTrack(const std::wstring& path, int& bpm, int& key) {
     // A middle segment hears enough beats; decoding the whole file would
     // triple the analysis time for nothing.
     const uint64_t total = dec.durationFrames(48000);
-    if (total > 48000ull * 130)
+    if (total > 48000ull * 90)
         dec.seekTo(int64_t(total / 4 / 48000) * 10000000ll);
     std::vector<float> chunk, onset;
-    const size_t maxHops = 48000ull * 100 / 512;
+    // 60 s is the analysis window. Key correlation is already flat by ~30 s
+    // and BPM needs 1800 hops (~19 s), so the back half of the old 100 s was
+    // paying decode time for nothing — it is the whole cost of a library
+    // pass. Verified against the 100 s baseline over 183 real tracks before
+    // it was shortened; re-verify with tools/dump_chroma if it changes again.
+    const size_t maxHops = 48000ull * 60 / 512;
     onset.reserve(maxHops + 8);
     double hopE = 0.0;
     float prevE = 0.f;

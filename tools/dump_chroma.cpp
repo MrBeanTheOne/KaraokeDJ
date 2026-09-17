@@ -30,12 +30,12 @@ int wmain(int argc, wchar_t** argv) {
         }
         // Same segment analyzeTrack() uses, so the dump matches what ships.
         const uint64_t total = dec.durationFrames(48000);
-        if (total > 48000ull * 130)
+        if (total > 48000ull * 90)
             dec.seekTo(int64_t(total / 4 / 48000) * 10000000ll);
         KeyDetector kd;
         std::vector<float> chunk;
         uint64_t got = 0;
-        while (got < 48000ull * 100) {
+        while (got < 48000ull * 60) { // must mirror analyzeTrack
             chunk.clear();
             if (!dec.readChunk(chunk)) break;
             kd.feed(chunk.data(), chunk.size() / 2);
