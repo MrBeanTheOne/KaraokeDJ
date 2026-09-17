@@ -86,7 +86,8 @@ Settings) and points you at the download when one exists.
 - **Singer rotation** with per-singer history — reorder by drag, right-click
   to clear for a new night, search any singer to see everything they've sung.
 - **Session snapshots**: if the laptop dies mid-gig, relaunching restores the
-  night exactly where it stopped.
+  night exactly where it stopped. Closing on purpose asks first, then clears
+  the decks and the queue for a fresh start.
 - **Audio device recovery**: pulling the USB interface mid-song recovers
   without a restart.
 - **Second-screen video output** with letterbox / fill / stretch fit modes.
@@ -145,8 +146,8 @@ their own licenses ([THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)).
 src/app/       app state, UI drawing, engine tick, menus, data/db glue
 src/ui/        immediate-mode Direct2D widget kit
 src/audio/     WASAPI output + device recovery
-src/media/     Media Foundation decode, waveform/loudness/BPM analysis
-src/playback/  deck engine (transport, mixing, markers)
+src/media/     Media Foundation decode, waveform/loudness/BPM/key analysis
+src/playback/  deck engine (transport, mixing, key change, markers)
 src/karaoke/   CDG rendering + karaoke ZIP handling
 src/video/     video windows (deck previews + fullscreen output)
 src/web/       optional phone-request server (embedded page + JSON API)
