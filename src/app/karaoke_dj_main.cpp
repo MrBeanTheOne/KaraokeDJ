@@ -268,7 +268,7 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             // ...and keeps the operator panel live. Right-clicking a row used
             // to freeze the playhead and the preview panes for as long as the
             // menu was open, because TrackPopupMenu parks the main loop.
-            if (g_modal) paintFrame(*g_app);
+            if (g_modal && !IsIconic(h)) paintFrame(*g_app);
         }
         return 0;
     case 0x02E0: { // WM_DPICHANGED: move to the suggested rect, re-read DPI
@@ -420,7 +420,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             DispatchMessageW(&msg);
         }
         if (g_dpiChanged) { ui.refreshDpi(); g_dpiChanged = false; }
-        if (g_sized) { ui.resize(g_w, g_h); g_sized = false; }
+        // Minimizing reports a 0x0 client area. Resizing the render target to
+        // that is meaningless, and it would have to be undone on restore.
+        if (g_sized && g_w && g_h) { ui.resize(g_w, g_h); g_sized = false; }
         a.uiScale = ui.dpiScale();
 
         // Keyboard input is consumed immediately — the loop runs several times
@@ -766,6 +768,18 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                              a.resizingSide || a.resizingQueue || a.dragging ||
                              a.colDrag >= 0 || a.markerDeck >= 0 ||
                              a.scrollGrab != 0;
+        // Nothing to draw into a minimized window, and drawing anyway is not
+        // free: the client area is 0x0, every frame still walks the whole UI
+        // and still hands D2D a swap it can never present. On the user's
+        // laptop (integrated graphics) that climbed ~6 MB/s until the app was
+        // restored; the desktop's discrete GPU hid it completely. engineTick
+        // above keeps running, so playback, automix and the audience screen
+        // carry on exactly as before -- only the operator panel pauses, and
+        // it has no viewer.
+        if (IsIconic(hwnd)) {
+            std::this_thread::sleep_for(50ms);
+            continue;
+        }
         if (Clock::now() - lastDraw >= (engaged ? 15ms : 33ms)) {
             lastDraw = Clock::now();
             paintFrame(a);
