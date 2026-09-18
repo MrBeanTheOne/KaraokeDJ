@@ -233,6 +233,7 @@ static const std::unordered_map<std::wstring, std::wstring>& frMap() {
         {L"Update library (rescan folder)",
          L"Mettre à jour la bibliothèque (ré-analyser)"},
         {L"Remove from library", L"Retirer de la bibliothèque"},
+        {L"Folder moved — relocate…", L"Dossier déplacé — relocaliser…"},
         {L"Sing now", L"Chanter maintenant"},
         {L"Mark completed", L"Marquer terminé"},
         {L"Skip", L"Sauter"},

@@ -287,6 +287,7 @@ struct App {
     ConfirmAction confirmAction = ConfirmAction::None;
     std::wstring confirmTitle, confirmL1, confirmL2; // two body lines
     std::wstring confirmPath;      // RemoveFolder payload
+    std::wstring relocFrom;        // folder awaiting a relocate target
     int64_t confirmId = 0;         // DeletePlaylist payload
     std::vector<int64_t> confirmIds; // CleanMissing payload
 
@@ -457,5 +458,8 @@ int showTrackMenu(App& a, HWND hwnd, float cx, float cy,
 void addToPlaylistDb(App& a, int64_t playlistId, const Match& m);
 void queueAllPlaylist(App& a, int64_t playlistId);
 void removeFolder(App& a, const std::wstring& folder);
+// Re-point a folder's tracks at a new location (drive letter changed, media
+// moved). Returns tracks moved, or -1 if none of them are at the new path.
+int relocateFolder(App& a, const std::wstring& oldF, const std::wstring& newF);
 void handleMenu(App& a, HWND hwnd);
 void dropExternal(App& a, float x, float y, const std::vector<std::wstring>& files);

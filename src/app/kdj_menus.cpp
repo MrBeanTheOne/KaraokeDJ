@@ -143,6 +143,76 @@ void removeFolder(App& a, const std::wstring& folder) {
                L"are NOT touched.");
 }
 
+// A folder's media moved — nearly always a removable drive coming back as a
+// different letter. Rewriting the stored paths IN PLACE keeps every media_id,
+// so playlists, rotation, history, start/end markers, BPM and detected keys
+// all stay attached; removing and re-importing would strand every one of them
+// and pay for the whole analysis again. Paths are BINARY-collated, so
+// "prefix <= path < prefix+1" is an index range over the subtree.
+//
+// Returns the number of tracks moved, or -1 when the new folder holds none of
+// them (a mis-picked folder would otherwise rewrite the subtree to nowhere).
+int relocateFolder(App& a, const std::wstring& oldF, const std::wstring& newF) {
+    if (oldF.empty() || newF.empty() || oldF == newF) return 0;
+    const std::string lo = utf8(oldF + L"\\");
+    std::string hi = lo;
+    ++hi.back();
+    int64_t n = 0;
+    {
+        Db::Stmt c;
+        a.db.prepare(c, "SELECT COUNT(*) FROM media_item WHERE path>=?1 AND path<?2");
+        c.bind(1, lo).bind(2, hi);
+        if (c.step()) n = c.colInt(0);
+    }
+    if (!n) return 0;
+    { // Spot-check: do these files actually exist at the new location?
+        int checked = 0, found = 0;
+        Db::Stmt q;
+        a.db.prepare(q, "SELECT path FROM media_item WHERE path>=?1 AND path<?2 "
+                        "LIMIT 25");
+        q.bind(1, lo).bind(2, hi);
+        while (q.step()) {
+            const std::wstring p = wide(q.colText(0));
+            if (p.size() <= oldF.size()) continue;
+            const std::wstring np = newF + p.substr(oldF.size());
+            ++checked;
+            if (GetFileAttributesW(np.c_str()) != INVALID_FILE_ATTRIBUTES) ++found;
+        }
+        if (checked && !found) return -1;
+    }
+    const std::string nlo = utf8(newF + L"\\");
+    std::string nhi = nlo;
+    ++nhi.back();
+    a.db.exec("BEGIN");
+    { // substr() counts CHARACTERS, so length(?4) must do the measuring —
+      // a byte count would corrupt any prefix with an accent in it.
+        Db::Stmt u;
+        a.db.prepare(u, "UPDATE media_item SET path = ?3 || substr(path, "
+                        "length(?4) + 1) WHERE path>=?1 AND path<?2");
+        u.bind(1, lo).bind(2, hi).bind(3, utf8(newF)).bind(4, utf8(oldF));
+        u.step();
+    }
+    { // search_f embeds the path, so it has to be rebuilt for the moved rows
+        Db::Stmt u;
+        a.db.prepare(u, "UPDATE media_item SET search_f = fold(COALESCE(title,'')) "
+                        "|| char(10) || fold(COALESCE(artist,'')) || char(10) || "
+                        "fold(path) WHERE path>=?1 AND path<?2");
+        u.bind(1, nlo).bind(2, nhi);
+        u.step();
+    }
+    { // the imported root itself, and any roots nested inside it
+        Db::Stmt u;
+        a.db.prepare(u, "UPDATE scan_root SET path = ?3 || substr(path, "
+                        "length(?4) + 1) WHERE path=?4 OR (path>=?1 AND path<?2)");
+        u.bind(1, lo).bind(2, hi).bind(3, utf8(newF)).bind(4, utf8(oldF));
+        u.step();
+    }
+    a.db.exec("COMMIT");
+    a.searchDirty = true;
+    a.navDirty = true;
+    return int(n);
+}
+
 void performRemoveFolder(App& a, const std::wstring& folder) {
     const std::string lo = utf8(folder + L"\\");
     std::string hi = lo;
@@ -206,18 +276,19 @@ void addToPlaylistDb(App& a, int64_t playlistId, const Match& m) {
 void handleMenu(App& a, HWND hwnd) {
     const MenuReq req = a.menu;
     a.menu = {};
-    if (req.index <= -2 && req.index >= -7) { // folder/image/profile pickers
+    if (req.index <= -2 && req.index >= -8) { // folder/image/profile pickers
         if (a.pickThread.joinable()) return; // picker already open
         a.pickKind = req.index == -3   ? 1
                      : req.index == -4 ? 2
                      : req.index == -5 ? 3   // export profile (save)
                      : req.index == -6 ? 4   // import profile (open)
                      : req.index == -7 ? 5   // youtube download folder
+                     : req.index == -8 ? 6   // relocate a moved folder
                                        : 0;
         const int kind = a.pickKind;
         a.pickThread = std::thread([&a, hwnd, kind]() {
             CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-            a.pickResult = kind == 0 || kind == 5 ? pickFolder(hwnd)
+            a.pickResult = kind == 0 || kind == 5 || kind == 6 ? pickFolder(hwnd)
                            : kind == 3 ? pickProfile(hwnd, true)
                            : kind == 4 ? pickProfile(hwnd, false)
                                        : pickFile(hwnd);
@@ -412,9 +483,13 @@ void handleMenu(App& a, HWND hwnd) {
     } else if (req.kind == MenuReq::FolderRow && !req.path.empty()) {
         const int sel = showMenu(hwnd, a.uiScale, req.x, req.y,
                                  {L"Update library (rescan folder)",
+                                  L"Folder moved — relocate…",
                                   L"Remove from library"});
         if (sel == 0) queueRescan(a, req.path);
-        else if (sel == 1) removeFolder(a, req.path);
+        else if (sel == 1) { // pick the new location, then remap in place
+            a.relocFrom = req.path;
+            a.menu = {MenuReq::None, -8}; // STA picker runs after this frame
+        } else if (sel == 2) removeFolder(a, req.path);
     } else if (req.kind == MenuReq::SingerRow && req.index >= 0 &&
                req.index < int(a.singers.size())) {
         const SingerRow s = a.singers[req.index];

@@ -60,6 +60,9 @@ Settings) and points you at the download when one exists.
 - **Stays in sync**: right-click a folder to rescan it, one button rescans
   everything, and an optional watcher imports new files by itself seconds
   after they land on disk.
+- **Drive letter changed?** Right-click the folder → **relocate** and point it
+  at the new location. Your playlists, rotation, history, markers, BPM and
+  detected keys all stay attached — no re-import, no re-analysis.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
 - **Unplugged drive? Its tracks grey out** instead of waiting to fail when you
   click them, and come back by themselves when the drive returns.
@@ -99,8 +102,9 @@ Settings) and points you at the download when one exists.
 - **Keyboard shortcuts** for gig ergonomics: `Space` pause/resume the live
   deck, `Ctrl+N` next singer, `↑`/`↓` walk the track list, `Enter` queue,
   `PgDn` skip, `Del` remove from queue, `Esc` back out.
-- **Profile transfer**: export settings, playlists, markers, tags and BPM to
-  a single file and import it on another machine — set up once, run anywhere.
+- **Profile transfer**: export settings, playlists, markers, tags, BPM and
+  detected keys to a single file and import it on another machine — set up
+  once, run anywhere.
 
 ### 📱 Phone requests <sub>(optional, off by default)</sub>
 

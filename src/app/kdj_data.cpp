@@ -824,8 +824,8 @@ bool exportProfile(App& a, const std::wstring& file) {
                   "WHERE key NOT IN ('win_w','win_h','audio_device',"
                   "'video_monitor','snap_blob','snap_clean');") &&
         a.db.exec("CREATE TABLE exp.media AS SELECT path, artist, title, genre, "
-                  "year, bpm, cue_in_ms, cue_out_ms, IFNULL(hidden,0) hidden "
-                  "FROM media_item;") &&
+                  "year, bpm, IFNULL(music_key,0) music_key, cue_in_ms, "
+                  "cue_out_ms, IFNULL(hidden,0) hidden FROM media_item;") &&
         a.db.exec("CREATE TABLE exp.pl AS SELECT id, name FROM playlist;") &&
         a.db.exec("CREATE TABLE exp.pli AS SELECT pi.playlist_id, m.path, "
                   "pi.position FROM playlist_item pi "
@@ -845,16 +845,29 @@ bool importProfile(App& a, const std::wstring& file) {
         a.db.exec("DETACH imp;");
         return false;
     }
+    // Profiles written before key detection have no music_key column. Probe
+    // for it rather than rejecting those files as "not a profile".
+    Db::Stmt probe;
+    const bool hasKey =
+        a.db.prepare(probe, "SELECT music_key FROM imp.media LIMIT 1");
     const bool ok =
         a.db.exec("INSERT OR REPLACE INTO settings SELECT key, value "
                   "FROM imp.settings;") &&
-        a.db.exec("UPDATE media_item SET "
-                  "(artist,title,genre,year,bpm,cue_in_ms,cue_out_ms,hidden) = "
-                  "(SELECT im.artist, im.title, im.genre, im.year, im.bpm, "
-                  "im.cue_in_ms, im.cue_out_ms, im.hidden FROM imp.media im "
-                  "WHERE im.path = media_item.path), "
-                  "search_f = NULL "
-                  "WHERE path IN (SELECT path FROM imp.media);") &&
+        a.db.exec(hasKey
+                  ? "UPDATE media_item SET (artist,title,genre,year,bpm,"
+                    "music_key,cue_in_ms,cue_out_ms,hidden) = "
+                    "(SELECT im.artist, im.title, im.genre, im.year, im.bpm, "
+                    "im.music_key, im.cue_in_ms, im.cue_out_ms, im.hidden "
+                    "FROM imp.media im WHERE im.path = media_item.path), "
+                    "search_f = NULL "
+                    "WHERE path IN (SELECT path FROM imp.media);"
+                  : "UPDATE media_item SET "
+                    "(artist,title,genre,year,bpm,cue_in_ms,cue_out_ms,hidden) = "
+                    "(SELECT im.artist, im.title, im.genre, im.year, im.bpm, "
+                    "im.cue_in_ms, im.cue_out_ms, im.hidden FROM imp.media im "
+                    "WHERE im.path = media_item.path), "
+                    "search_f = NULL "
+                    "WHERE path IN (SELECT path FROM imp.media);") &&
         // refold whatever the import touched (same rule as the migration)
         a.db.exec("UPDATE media_item SET search_f = fold(COALESCE(title,'')) || "
                   "char(10) || fold(COALESCE(artist,'')) || char(10) || "

@@ -459,6 +459,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                         a.status = L"waiting-screen background set";
                     }
                     setSetting(a.db, "idle_bg", utf8(a.idleBgPath));
+                } else if (a.pickKind == 6) { // a folder's media moved
+                    const int n = relocateFolder(a, a.relocFrom, a.pickResult);
+                    a.status = n < 0 ? L"none of those tracks are in that "
+                                       L"folder — nothing changed"
+                               : n == 0 ? L"nothing to relocate"
+                                        : std::to_wstring(n) +
+                                              L" tracks now point at " +
+                                              a.pickResult;
+                    a.relocFrom.clear();
                 } else if (a.pickKind == 5) { // YouTube download folder
                     a.ytDir = a.pickResult;
                     setSetting(a.db, "yt_dir", utf8(a.ytDir));
