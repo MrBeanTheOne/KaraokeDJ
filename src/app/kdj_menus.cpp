@@ -150,8 +150,10 @@ void removeFolder(App& a, const std::wstring& folder) {
 // and pay for the whole analysis again. Paths are BINARY-collated, so
 // "prefix <= path < prefix+1" is an index range over the subtree.
 //
-// Returns the number of tracks moved, or -1 when the new folder holds none of
-// them (a mis-picked folder would otherwise rewrite the subtree to nowhere).
+// Returns tracks moved; -1 when the new folder holds none of them (a
+// mis-picked folder would otherwise rewrite the subtree to nowhere), -2 when
+// the destination already has library rows of its own, and 0 on a failed
+// write (rolled back).
 int relocateFolder(App& a, const std::wstring& oldF, const std::wstring& newF) {
     if (oldF.empty() || newF.empty() || oldF == newF) return 0;
     const std::string lo = utf8(oldF + L"\\");
@@ -183,31 +185,59 @@ int relocateFolder(App& a, const std::wstring& oldF, const std::wstring& newF) {
     const std::string nlo = utf8(newF + L"\\");
     std::string nhi = nlo;
     ++nhi.back();
+    { // media_item.path is UNIQUE. If the destination was already imported
+      // (the watcher often gets there first), the rewrite would abort on a
+      // constraint — say so instead of half-doing it.
+        Db::Stmt c;
+        a.db.prepare(c, "SELECT COUNT(*) FROM media_item WHERE path>=?1 AND path<?2");
+        c.bind(1, nlo).bind(2, nhi);
+        if (c.step() && c.colInt(0) > 0) return -2;
+    }
+    bool ok = true;
     a.db.exec("BEGIN");
     { // substr() counts CHARACTERS, so length(?4) must do the measuring —
       // a byte count would corrupt any prefix with an accent in it.
         Db::Stmt u;
-        a.db.prepare(u, "UPDATE media_item SET path = ?3 || substr(path, "
-                        "length(?4) + 1) WHERE path>=?1 AND path<?2");
-        u.bind(1, lo).bind(2, hi).bind(3, utf8(newF)).bind(4, utf8(oldF));
-        u.step();
+        ok = a.db.prepare(u, "UPDATE media_item SET path = ?3 || substr(path, "
+                             "length(?4) + 1) WHERE path>=?1 AND path<?2");
+        if (ok) {
+            u.bind(1, lo).bind(2, hi).bind(3, utf8(newF)).bind(4, utf8(oldF));
+            ok = u.run();
+        }
     }
-    { // search_f embeds the path, so it has to be rebuilt for the moved rows
+    if (ok) { // search_f embeds the path, so rebuild it for the moved rows
         Db::Stmt u;
-        a.db.prepare(u, "UPDATE media_item SET search_f = fold(COALESCE(title,'')) "
-                        "|| char(10) || fold(COALESCE(artist,'')) || char(10) || "
-                        "fold(path) WHERE path>=?1 AND path<?2");
-        u.bind(1, nlo).bind(2, nhi);
-        u.step();
+        ok = a.db.prepare(u, "UPDATE media_item SET search_f = "
+                             "fold(COALESCE(title,'')) || char(10) || "
+                             "fold(COALESCE(artist,'')) || char(10) || "
+                             "fold(path) WHERE path>=?1 AND path<?2");
+        if (ok) {
+            u.bind(1, nlo).bind(2, nhi);
+            ok = u.run();
+        }
     }
-    { // the imported root itself, and any roots nested inside it
+    if (ok) { // the imported root itself, and any roots nested inside it
         Db::Stmt u;
-        a.db.prepare(u, "UPDATE scan_root SET path = ?3 || substr(path, "
-                        "length(?4) + 1) WHERE path=?4 OR (path>=?1 AND path<?2)");
-        u.bind(1, lo).bind(2, hi).bind(3, utf8(newF)).bind(4, utf8(oldF));
-        u.step();
+        ok = a.db.prepare(u, "UPDATE scan_root SET path = ?3 || substr(path, "
+                             "length(?4) + 1) WHERE path=?4 OR "
+                             "(path>=?1 AND path<?2)");
+        if (ok) {
+            u.bind(1, lo).bind(2, hi).bind(3, utf8(newF)).bind(4, utf8(oldF));
+            ok = u.run();
+        }
     }
-    a.db.exec("COMMIT");
+    // Never report a move that did not happen: the whole point of the
+    // transaction is that a constraint failure leaves the library untouched.
+    a.db.exec(ok ? "COMMIT" : "ROLLBACK");
+    if (!ok) return 0;
+    // The queue and the decks hold their own copies of the path; without this
+    // anything already queued keeps failing with "NO AUDIO FILE".
+    auto repoint = [&](std::wstring& p) {
+        if (p.size() > oldF.size() && p.compare(0, oldF.size(), oldF) == 0)
+            p = newF + p.substr(oldF.size());
+    };
+    for (auto& m : a.queue) repoint(m.path);
+    for (int d = 0; d < 2; ++d) repoint(a.deckMatch[d].path);
     a.searchDirty = true;
     a.navDirty = true;
     return int(n);
@@ -429,7 +459,10 @@ void handleMenu(App& a, HWND hwnd) {
                                 "WHERE id=?1");
                 q.bind(1, m.id).bind(2, a.cueIn[d]).bind(3, a.cueOut[d]);
                 q.step();
-                applyCueIn(a, d); // the deck follows the marker immediately
+                // ONLY the START marker re-cues. Doing it for "Set END" or
+                // "Clear markers" would yank a cued deck off the spot the
+                // operator just scrubbed to in order to set that marker.
+                if (sel == 0) applyCueIn(a, d);
                 a.status = sel == 2 ? L"markers cleared: " + m.label
                            : sel == 0
                                ? L"START marker @ " + fmtTime(double(ms) / 1000) +

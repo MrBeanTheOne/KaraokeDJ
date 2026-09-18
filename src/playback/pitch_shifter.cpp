@@ -23,7 +23,10 @@ void PitchShifter::setSemitones(int semi, uint32_t channels) {
         ready_.store(true, std::memory_order_release); // publishes the buffers
         return;
     }
-    // Already armed (or still at 0): a plain ratio change, applied live.
+    // Coming back from 0, the mixer stopped calling process() entirely, so
+    // the delay line holds audio from before the gap — resuming the overlap-add
+    // against it clicks. Start clean instead.
+    if (semi != 0 && semi_.load(std::memory_order_relaxed) == 0) reset();
     ratio_.store(std::pow(2.f, float(semi) / 12.f), std::memory_order_relaxed);
     semi_.store(semi, std::memory_order_relaxed);
 }
@@ -40,8 +43,20 @@ void PitchShifter::clearState() {
 
 void PitchShifter::process(float* io, size_t frames) {
     if (!ready_.load(std::memory_order_acquire)) return;
+    if (ratio_.load(std::memory_order_relaxed) == 1.f || frames == 0) return;
+    // A render buffer bigger than one working block gets split rather than
+    // skipped: on an endpoint with a long period, skipping would leave the
+    // key silently doing nothing (or jumping, if only some buffers were big).
+    while (frames > kMaxBlock) {
+        block(io, kMaxBlock);
+        io += kMaxBlock * ch_;
+        frames -= kMaxBlock;
+    }
+    block(io, frames);
+}
+
+void PitchShifter::block(float* io, size_t frames) {
     const float r = ratio_.load(std::memory_order_relaxed);
-    if (r == 1.f || frames == 0 || frames > kMaxBlock) return;
     if (resetReq_.exchange(false, std::memory_order_relaxed)) clearState();
 
     // --- input FIFO: drop what the search can no longer reach, then append.

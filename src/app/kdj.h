@@ -355,6 +355,9 @@ inline void askConfirm(App& a, App::ConfirmAction action,
     a.confirmL2 = l2;
 }
 
+// Text-caret blink for focused input boxes. Shared: every UI file draws one.
+inline bool caretOn() { return (GetTickCount64() / 530) & 1; }
+
 inline std::wstring fmtTime(double sec) {
     if (sec < 0) sec = 0;
     wchar_t b[16];

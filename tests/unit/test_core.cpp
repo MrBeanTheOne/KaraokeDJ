@@ -126,6 +126,26 @@ int main() {
         assert(std::fabs(f0 - 220.0) < 4.0);   // key 0 is a pure bypass
         assert(std::fabs(fUp - 440.0) < 20.0); // +12 semitones = an octave up
         assert(std::fabs(fDn - 110.0) < 10.0); // -12 = an octave down
+
+        // A render buffer larger than one internal working block must still
+        // shift: an endpoint with a long period used to leave it silently
+        // unshifted, which is invisible until someone hears it.
+        PitchShifter big;
+        big.setSemitones(12, 2);
+        constexpr size_t kBig = 4096; // > PitchShifter's internal block
+        std::vector<float> tail;
+        for (size_t b = 0; b < 30; ++b) {
+            std::vector<float> blk(kBig * 2);
+            for (size_t f = 0; f < kBig; ++f) {
+                const double t = double(b * kBig + f) / double(kRate);
+                const float v = float(std::sin(2.0 * 3.14159265 * 220.0 * t));
+                blk[f * 2] = blk[f * 2 + 1] = v;
+            }
+            big.process(blk.data(), kBig);
+            if (b >= 15) tail.insert(tail.end(), blk.begin(), blk.end());
+        }
+        assert(tail.size() == 15 * kBig * 2); // still n in == n out
+        assert(std::fabs(zcFreq(tail, kRate) - 440.0) < 20.0);
     }
 
     { // key detection: play a diatonic scale + triads, expect the right key

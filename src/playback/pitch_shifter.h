@@ -45,6 +45,7 @@ private:
     static constexpr size_t kOutCap = 8192; // stretched FIFO (frames)
     static constexpr size_t kMaxBlock = 2048; // biggest render buffer handled
 
+    void block(float* io, size_t frames); // process() on <= kMaxBlock frames
     bool hop(float ratio); // one synthesis hop; false if it needs more input
     void clearState();
 

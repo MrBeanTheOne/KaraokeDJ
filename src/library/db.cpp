@@ -173,6 +173,11 @@ Db::Stmt& Db::Stmt::bindNull(int idx) {
 
 bool Db::Stmt::step() { return sqlite3_step(s) == SQLITE_ROW; }
 
+bool Db::Stmt::run() {
+    const int rc = sqlite3_step(s);
+    return rc == SQLITE_DONE || rc == SQLITE_ROW;
+}
+
 int64_t Db::Stmt::colInt(int i) const { return sqlite3_column_int64(s, i); }
 
 std::string Db::Stmt::colText(int i) const {

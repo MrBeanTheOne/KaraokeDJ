@@ -63,8 +63,12 @@ target_link_libraries(librarian PRIVATE sqlite3 shell32 propsys ole32 normaliz)
 add_executable(karaoke_dj WIN32
   src/app/karaoke_dj_main.cpp
   src/app/kdj_data.cpp
+  src/app/kdj_jobs.cpp
   src/app/kdj_engine.cpp
   src/app/kdj_ui.cpp
+  src/app/kdj_ui_decks.cpp
+  src/app/kdj_ui_browser.cpp
+  src/app/kdj_ui_settings.cpp
   src/app/kdj_menus.cpp
   assets/app.rc
   src/ui/im.cpp

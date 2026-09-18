@@ -34,6 +34,11 @@ public:
         Stmt& bind(int idx, const std::string& v);
         Stmt& bindNull(int idx);
         bool step(); // true while a row is available
+        // For statements that return no rows: true unless SQLite reported an
+        // error. step() answers "did a row come back", which is ALWAYS false
+        // for an UPDATE, so it cannot tell success from a failed constraint —
+        // callers that need to roll back must use this.
+        bool run();
         int64_t colInt(int i) const;
         std::string colText(int i) const;
         sqlite3_stmt* s = nullptr;

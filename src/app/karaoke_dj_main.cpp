@@ -171,6 +171,21 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 if (s.status == "waiting") { singNow(*g_app, s); break; }
         }
         return 0;
+    case WM_GETMINMAXINFO: {
+        // The deck layout packs PLAY/CLEAR and the key group into one row and
+        // they overlap below ~1050 DIP wide, where a single click would hit
+        // both. Nothing else enforced a floor — the saved-size clamp only
+        // applies at startup — so pin it here.
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
+        UINT dpi = 96;
+        using GetDpiFn = UINT(WINAPI*)(HWND);
+        if (auto getDpi = reinterpret_cast<GetDpiFn>(GetProcAddress(
+                GetModuleHandleW(L"user32.dll"), "GetDpiForWindow")))
+            if (const UINT d = getDpi(h)) dpi = d;
+        mmi->ptMinTrackSize.x = MulDiv(1140, dpi, 96);
+        mmi->ptMinTrackSize.y = MulDiv(720, dpi, 96);
+        return 0;
+    }
     case WM_DROPFILES: {
         HDROP hd = reinterpret_cast<HDROP>(wp);
         POINT pt{};
@@ -218,6 +233,11 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         // whatever is still queued. WM_DESTROY (and a confirmed quit) still
         // goes straight through.
         if (g_app && !g_app->quitConfirmed) {
+            // The prompt is drawn into THIS window, so closing from the
+            // taskbar while minimized would leave it invisible and the app
+            // looking hung. Surface the window before asking.
+            if (IsIconic(h)) ShowWindow(h, SW_RESTORE);
+            SetForegroundWindow(h);
             askConfirm(*g_app, App::ConfirmAction::QuitApp, L"CLOSE KARAOKE DJ?",
                        L"The decks and the queue will be cleared.",
                        L"Your library, playlists, rotation and history are kept.");
@@ -461,12 +481,14 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                     setSetting(a.db, "idle_bg", utf8(a.idleBgPath));
                 } else if (a.pickKind == 6) { // a folder's media moved
                     const int n = relocateFolder(a, a.relocFrom, a.pickResult);
-                    a.status = n < 0 ? L"none of those tracks are in that "
-                                       L"folder — nothing changed"
-                               : n == 0 ? L"nothing to relocate"
-                                        : std::to_wstring(n) +
-                                              L" tracks now point at " +
-                                              a.pickResult;
+                    a.status =
+                        n == -1 ? L"none of those tracks are in that folder — "
+                                  L"nothing changed"
+                        : n == -2 ? L"that folder is already in the library — "
+                                    L"remove one of the two first"
+                        : n == 0 ? L"relocate failed — library unchanged"
+                                 : std::to_wstring(n) + L" tracks now point at " +
+                                       a.pickResult;
                     a.relocFrom.clear();
                 } else if (a.pickKind == 5) { // YouTube download folder
                     a.ytDir = a.pickResult;
