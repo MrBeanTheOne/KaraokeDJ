@@ -83,6 +83,15 @@ void startUpdateCheck(App& a, bool manual) {
 // Walks every library row with unknown BPM and detects it from the audio.
 // Undetectable files are marked -1 (shown blank) so launches don't re-chew
 // them; the deck's full-track scan still refines those on first play.
+// Whatever a worker still has open. When the count freezes this is the file
+// that did it -- the whole point of publishing it.
+std::wstring App::bpmStuckFile() {
+    std::lock_guard<std::mutex> lk(bpmNowMu);
+    for (const std::wstring& p : bpmNow)
+        if (!p.empty()) return p;
+    return L"";
+}
+
 void startBpmAnalysis(App& a) {
     if (a.scanning.load()) return; // the import-finished handler restarts us
     a.bpmStop.store(true);
@@ -133,10 +142,11 @@ void startBpmAnalysis(App& a) {
         // reason a gig stutters; the gate already stops it during playback,
         // so there is nothing to gain from being greedier.
         const unsigned hw = std::thread::hardware_concurrency();
-        const unsigned nWorkers = std::clamp(hw ? hw / 2 : 2u, 2u, 4u);
+        const unsigned nWorkers =
+            std::clamp(hw ? hw / 2 : 2u, 2u, unsigned(App::kBpmWorkers));
         std::vector<std::thread> workers;
         for (unsigned w = 0; w < nWorkers; ++w) {
-            workers.emplace_back([&]() {
+            workers.emplace_back([&, w]() {
                 // Each worker owns its COM apartment, its decoder and its own
                 // SQLite connection. WAL takes one writer at a time and the
                 // connection already carries a 3 s busy timeout; the writes
@@ -161,12 +171,22 @@ void startBpmAnalysis(App& a) {
                                 next.fetch_add(1, std::memory_order_relaxed);
                             if (i >= rows.size()) break;
                             const Row& r = rows[i];
+                            { // publish what this worker is about to open
+                                std::lock_guard<std::mutex> lk(a.bpmNowMu);
+                                a.bpmNow[w] = r.path;
+                            }
                             int bpm = 0, key = -1;
                             // One decode, both answers. A file we couldn't
                             // open at all (unplugged drive) is left untouched
                             // so it gets another go next launch — recording
                             // "nothing found" would retire it for good.
-                            if (!analyzeTrack(r.path, bpm, key, &a.bpmStop)) {
+                            const bool got =
+                                analyzeTrack(r.path, bpm, key, &a.bpmStop);
+                            { // done with it, whatever the outcome
+                                std::lock_guard<std::mutex> lk(a.bpmNowMu);
+                                a.bpmNow[w].clear();
+                            }
+                            if (!got) {
                                 a.bpmDone.fetch_add(1);
                                 continue;
                             }
@@ -355,7 +375,7 @@ bool exportProfile(App& a, const std::wstring& file) {
     return ok;
 }
 
-bool importProfile(App& a, const std::wstring& file) {
+bool importProfile(App& a, const std::wstring& file, int* matched, int* total) {
     Db::Stmt at;
     a.db.prepare(at, "ATTACH ?1 AS imp");
     at.bind(1, utf8(file));
@@ -365,6 +385,15 @@ bool importProfile(App& a, const std::wstring& file) {
     if (!a.db.prepare(chk, "SELECT COUNT(*) FROM imp.media") || !chk.step()) {
         a.db.exec("DETACH imp;");
         return false;
+    }
+    if (total) *total = int(chk.colInt(0));
+    if (matched) {
+        Db::Stmt m;
+        *matched = a.db.prepare(m, "SELECT COUNT(*) FROM media_item WHERE path "
+                                   "IN (SELECT path FROM imp.media)") &&
+                           m.step()
+                       ? int(m.colInt(0))
+                       : 0;
     }
     // Profiles written before key detection have no music_key column. Probe
     // for it rather than rejecting those files as "not a profile".

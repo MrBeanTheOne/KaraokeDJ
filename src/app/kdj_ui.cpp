@@ -18,18 +18,22 @@ void drawUi(App& a, Ui& ui, float W, float H) {
     }
     if (ui.in.pressed) a.focus = Focus::None; // boxes re-claim when hit
     ui.text(rc(16, 8, 300, 32), L"KARAOKE DJ", 20, cAccent, 0, true);
-    wchar_t perf[96];
-    if (a.bpmBusy.load() && a.bpmTotal.load() > 0)
+    wchar_t perf[320];
+    if (a.bpmBusy.load() && a.bpmTotal.load() > 0) {
         // Say WHY the count is frozen while a deck is live, or it reads as a
-        // hung analyzer for the length of the song.
-        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB   %ls %d / %d", a.cpuPct,
-                 a.ramMb,
+        // hung analyzer for the length of the song. And name the file being
+        // decoded: if the count ever does stick, that is the one to blame.
+        const std::wstring now = a.bpmWaiting.load() ? L"" : a.bpmStuckFile();
+        swprintf(perf, 320, L"CPU %.1f%%   RAM %d MB   %ls %d / %d%ls%ls",
+                 a.cpuPct, a.ramMb,
                  a.bpmWaiting.load() ? L"ANALYSIS HELD (PLAYING)"
                                      : L"ANALYZING BPM + KEY",
-                 a.bpmDone.load(), a.bpmTotal.load());
-    else
-        swprintf(perf, 96, L"CPU %.1f%%   RAM %d MB", a.cpuPct, a.ramMb);
-    ui.text(rc(16, 40, 420, 14), perf, 10, cDim, 0, false);
+                 a.bpmDone.load(), a.bpmTotal.load(),
+                 now.empty() ? L"" : L"   ", leafName(now).c_str());
+    } else {
+        swprintf(perf, 320, L"CPU %.1f%%   RAM %d MB", a.cpuPct, a.ramMb);
+    }
+    ui.text(rc(16, 40, W - 32, 14), perf, 10, cDim, 0, false);
     ui.text(rc(16, 8, W - 32, 32), a.status, 12, cDim, 2, false);
 
     std::wstring vlabel = a.outMonitor < 0

@@ -267,6 +267,12 @@ struct App {
     std::atomic<bool> bpmWaiting{false}; // stood down: a deck is playing
     std::atomic<bool> bpmFinished{false};
     std::atomic<int> bpmDone{0}, bpmTotal{0};
+    // The file each worker currently has open, so a stall names itself instead
+    // of leaving a frozen "n / total" and no clue which track did it.
+    static constexpr int kBpmWorkers = 4;
+    std::mutex bpmNowMu;
+    std::wstring bpmNow[kBpmWorkers];
+    std::wstring bpmStuckFile(); // the one in flight when nothing else is left
 
     // Video outputs
     std::unique_ptr<VideoWindow> fullOut;
@@ -452,7 +458,12 @@ std::wstring pickFolder(HWND owner);
 std::wstring pickFile(HWND owner); // image picker (waiting-screen logo)
 std::wstring pickProfile(HWND owner, bool save); // .kdjprofile open/save
 bool exportProfile(App& a, const std::wstring& file);
-bool importProfile(App& a, const std::wstring& file);
+// matched/total report how many of the profile's tracks exist in THIS library.
+// A profile is keyed by path, so a library scanned under a different drive
+// letter matches nothing -- and silently "succeeding" at that is how you lose
+// an afternoon. Both are optional.
+bool importProfile(App& a, const std::wstring& file, int* matched = nullptr,
+                   int* total = nullptr);
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
 std::wstring youtubeCacheDir(const std::wstring& custom = L"");
 void startYoutube(App& a, std::wstring url);

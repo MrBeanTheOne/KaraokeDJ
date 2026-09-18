@@ -503,10 +503,27 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                                          leafName(a.pickResult)
                                    : L"profile export failed";
                 } else if (a.pickKind == 4) { // import profile
-                    a.status = importProfile(a, a.pickResult)
-                                   ? L"profile imported — settings and "
-                                     L"playlists applied"
-                                   : L"that file is not a Karaoke DJ profile";
+                    int matched = 0, total = 0;
+                    if (!importProfile(a, a.pickResult, &matched, &total)) {
+                        a.status = L"that file is not a Karaoke DJ profile";
+                    } else if (matched == 0 && total > 0) {
+                        // Matching is by exact path, so this is almost always
+                        // a drive letter that moved, or a folder this machine
+                        // never scanned. Say so instead of claiming success.
+                        wchar_t m[200];
+                        swprintf(m, 200,
+                                 L"settings and playlists applied, but none of "
+                                 L"the %d tracks match this library — check the "
+                                 L"drive letter, or scan the folder first",
+                                 total);
+                        a.status = m;
+                    } else {
+                        wchar_t m[160];
+                        swprintf(m, 160,
+                                 L"profile imported — %d of %d tracks matched",
+                                 matched, total);
+                        a.status = m;
+                    }
                 } else if (a.pickKind == 2) { // waiting-screen background
                     a.idleBgPath = a.pickResult;
                     a.idleBgLoaded = loadImageFile(a.idleBgPath, a.idleBg, 1920);
