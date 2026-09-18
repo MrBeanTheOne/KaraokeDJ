@@ -64,8 +64,10 @@ Settings) and points you at the download when one exists.
   at the new location. Your playlists, rotation, history, markers, BPM and
   detected keys all stay attached — no re-import, no re-analysis.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
-- **Unplugged drive? Its tracks grey out** instead of waiting to fail when you
-  click them, and come back by themselves when the drive returns.
+- **Unplugged drive? Its tracks grey out** and refuse to be queued or loaded,
+  so nothing fails mid-gig. They come back by themselves when the drive
+  returns. Queueing a multi-selection or a whole playlist takes what it can
+  and tells you how many it skipped.
 - Sortable, resizable, reorderable columns (title, artist, genre, year, BPM,
   time, **key**) — right-click the header to choose what shows.
 - Playlists with drag-reorder, played-tonight dots, multi-select drag to

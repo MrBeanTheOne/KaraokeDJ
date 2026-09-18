@@ -400,6 +400,11 @@ void saveSettings(App& a, UINT winW, UINT winH);
 bool loadTo(App& a, int d, const Match& m);
 void rescueAutoCue(App& a, int d);
 void queueSelected(App& a);
+// A track whose drive is unplugged (the greyed-out rows) must not reach the
+// queue or a deck: accepting it only turns into "NO AUDIO FILE" later, mid-gig,
+// when the operator is least able to deal with it. Sets the status and returns
+// false when the track cannot be played right now.
+bool ensurePlayable(App& a, const Match& m);
 void playNow(App& a, const Match& m);
 void dropOnDeck(App& a, int d, const Match& m);
 void clearDeckSlot(App& a, int d);

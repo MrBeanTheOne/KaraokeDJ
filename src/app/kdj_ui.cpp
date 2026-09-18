@@ -148,9 +148,16 @@ void drawUi(App& a, Ui& ui, float W, float H) {
             if (hit(a.rcDeck[0], ui.in.mx, ui.in.my) ||
                 hit(a.rcDeck[1], ui.in.mx, ui.in.my) ||
                 hit(a.rcQueue, ui.in.mx, ui.in.my)) {
-                for (const Match& m : a.dragItems) a.queue.push_back(m);
-                a.status = L"queued " + std::to_wstring(a.dragItems.size()) +
-                           L" tracks";
+                size_t qn = 0, qskip = 0;
+                for (const Match& m : a.dragItems) {
+                    if (pathOffline(m.path, a.driveMask)) { ++qskip; continue; }
+                    a.queue.push_back(m);
+                    ++qn;
+                }
+                a.status = qskip ? L"queued " + std::to_wstring(qn) +
+                                       L", skipped " + std::to_wstring(qskip) +
+                                       L" on a disconnected drive"
+                                 : L"queued " + std::to_wstring(qn) + L" tracks";
             }
         } else if (a.dragging) {
             const int src = a.dragFromQueue; // remove first: a busy-deck drop
@@ -170,7 +177,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                     if (idx > src) --idx;
                     a.queue.insert(a.queue.begin() + idx, a.dragItem);
                     a.selQueue = idx;
-                } else if (src < 0) {
+                } else if (src < 0 && ensurePlayable(a, a.dragItem)) {
                     a.queue.push_back(a.dragItem);
                     a.status = L"queued: " + a.dragItem.label;
                 }

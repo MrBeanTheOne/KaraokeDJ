@@ -435,7 +435,8 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
                 if (a.nav == NavMode::Playlist) {
                     a.queue.clear();
                     for (size_t j = i + 1; j < a.results.size(); ++j)
-                        a.queue.push_back(a.results[j]);
+                        if (!pathOffline(a.results[j].path, a.driveMask))
+                            a.queue.push_back(a.results[j]);
                 }
             }
             const bool played = m.id && a.playedTonight.count(m.id);

@@ -62,20 +62,31 @@ bool loadTo(App& a, int d, const Match& m) {
     return true;
 }
 
+bool ensurePlayable(App& a, const Match& m) {
+    if (!pathOffline(m.path, a.driveMask)) return true;
+    a.status = L"unavailable — that drive is disconnected: " + m.label;
+    return false;
+}
+
 // Queue everything selected in the browser (multi-select aware).
 void queueSelected(App& a) {
-    size_t n = 0;
+    size_t n = 0, skipped = 0;
     if (a.selRows.size() > 1) {
         for (int k : a.selRows)
             if (k >= 0 && k < int(a.results.size())) {
+                if (pathOffline(a.results[k].path, a.driveMask)) { ++skipped; continue; }
                 a.queue.push_back(a.results[k]);
                 ++n;
             }
     } else if (a.selLib >= 0 && a.selLib < int(a.results.size())) {
+        if (!ensurePlayable(a, a.results[a.selLib])) return;
         a.queue.push_back(a.results[a.selLib]);
         n = 1;
     }
-    if (n > 1) a.status = L"queued " + std::to_wstring(n) + L" tracks";
+    if (skipped)
+        a.status = L"queued " + std::to_wstring(n) + L", skipped " +
+                   std::to_wstring(skipped) + L" on a disconnected drive";
+    else if (n > 1) a.status = L"queued " + std::to_wstring(n) + L" tracks";
 }
 
 // A manual action is about to replace an auto-cued track: return it to the
@@ -89,6 +100,7 @@ void rescueAutoCue(App& a, int d) {
 }
 
 void playNow(App& a, const Match& m) {
+    if (!ensurePlayable(a, m)) return;
     if (a.mixer.fadeTo.load() >= 0 || a.pendingFade >= 0) {
         a.status = L"transition in progress";
         return;
@@ -106,6 +118,7 @@ void playNow(App& a, const Match& m) {
 // Drop on a deck: cue it there without playing (it becomes the next song);
 // if that deck is busy, it goes to the front of the queue instead.
 void dropOnDeck(App& a, int d, const Match& m) {
+    if (!ensurePlayable(a, m)) return;
     const int act = a.mixer.activeDeck.load();
     if (act == d || a.pendingFade == d || a.mixer.fadeTo.load() == d) {
         a.queue.push_front(m);

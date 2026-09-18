@@ -116,9 +116,16 @@ void queueAllPlaylist(App& a, int64_t playlistId) {
                     "FROM playlist_item pi JOIN media_item m ON m.id=pi.media_id "
                     "WHERE pi.playlist_id=?1 ORDER BY pi.position");
     q.bind(1, playlistId);
-    size_t n = 0;
-    for (; q.step(); ++n) a.queue.push_back(readMatch(q));
-    a.status = L"queued " + std::to_wstring(n) + L" tracks";
+    size_t n = 0, skipped = 0;
+    while (q.step()) {
+        const Match m = readMatch(q);
+        if (pathOffline(m.path, a.driveMask)) { ++skipped; continue; }
+        a.queue.push_back(m);
+        ++n;
+    }
+    a.status = skipped ? L"queued " + std::to_wstring(n) + L", skipped " +
+                             std::to_wstring(skipped) + L" on a disconnected drive"
+                       : L"queued " + std::to_wstring(n) + L" tracks";
 }
 
 // Remove everything under a folder from the library DATABASE (files on disk
@@ -364,7 +371,7 @@ void handleMenu(App& a, HWND hwnd) {
         const auto singers = rotationSingers(a);
         const int sel = showTrackMenu(a, hwnd, req.x, req.y, items, 4, singers);
         if (sel == 0) playNow(a, m);
-        else if (sel == 1) a.queue.push_back(m);
+        else if (sel == 1) { if (ensurePlayable(a, m)) a.queue.push_back(m); }
         else if (sel == 2) { // play next: displace an auto-cued deck if needed
             const int act = a.mixer.activeDeck.load();
             const int idle = act < 0 ? 0 : 1 - act;
@@ -372,7 +379,7 @@ void handleMenu(App& a, HWND hwnd) {
                 rescueAutoCue(a, idle);
                 stopDeck(a, idle); // freed: the new front preloads next tick
             }
-            a.queue.push_front(m);
+            if (ensurePlayable(a, m)) a.queue.push_front(m);
         }
         else if (sel == 3) { // tag editor (replaces the old artist<->title swap)
             if (m.id) {
@@ -551,7 +558,7 @@ void dropExternal(App& a, float x, float y, const std::vector<std::wstring>& fil
         else if (hit(a.rcBrowser, x, y) && a.nav == NavMode::Playlist && m.id) {
             addToPlaylistDb(a, a.navPlaylist, m);
             a.searchDirty = true;
-        } else {
+        } else if (ensurePlayable(a, m)) {
             a.queue.push_back(m);
         }
         first = false;
