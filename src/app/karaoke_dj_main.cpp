@@ -125,11 +125,39 @@ static void openSettingsWindow(App& a, HWND owner, HINSTANCE hi) {
 // ------------------------------------------------------------------- window
 
 static UiInput g_pending;
+static Ui g_ui;
+static bool g_modal = false; // a popup menu is running its own message loop
 static UINT g_w = 1380, g_h = 860;
 static bool g_sized = false;
 static bool g_closed = false;
 static bool g_dpiChanged = false;
 static bool g_displayChanged = false;
+
+// One frame of the operator window. Lives out here because a popup menu runs
+// its own message loop, which parks the main loop -- the timer below paints
+// through it so the panel does not sit frozen while a menu is open.
+static void paintFrame(App& a) {
+    g_ui.beginFrame(g_pending);
+    drawUi(a, g_ui, float(g_w) / g_ui.dpiScale(), float(g_h) / g_ui.dpiScale());
+    g_ui.endFrame();
+    if (a.settingsWnd) {
+        RECT scr{};
+        GetClientRect(a.settingsWnd, &scr);
+        g_setUi.beginFrame(g_setIn);
+        drawSettings(a, g_setUi,
+                     rc(0, 0, scr.right / g_setUi.dpiScale(),
+                        scr.bottom / g_setUi.dpiScale()));
+        g_setUi.endFrame();
+        g_setIn.pressed = g_setIn.released = false;
+        g_setIn.pressX = g_setIn.pressY = -1;
+        g_setIn.wheel = 0;
+    }
+    g_pending.pressed = g_pending.released = g_pending.dblclick = false;
+    g_pending.pressX = g_pending.pressY = g_pending.dblX = g_pending.dblY = -1;
+    g_pending.rpressed = false;
+    g_pending.rX = g_pending.rY = -1;
+    g_pending.wheel = 0;
+}
 
 static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
@@ -235,7 +263,13 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_TIMER: // keeps audio-follow video presenting during modal menus
-        if (g_app) engineTick(*g_app);
+        if (g_app) {
+            engineTick(*g_app);
+            // ...and keeps the operator panel live. Right-clicking a row used
+            // to freeze the playhead and the preview panes for as long as the
+            // menu was open, because TrackPopupMenu parks the main loop.
+            if (g_modal) paintFrame(*g_app);
+        }
         return 0;
     case 0x02E0: { // WM_DPICHANGED: move to the suggested rect, re-read DPI
         const RECT* pr = reinterpret_cast<RECT*>(lp);
@@ -367,7 +401,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     startUpdateCheck(a, false); // silent: only speaks up when newer exists
     startWatcher(a); // no-op unless the watch-folders setting is on
 
-    Ui ui;
+    Ui& ui = g_ui;
     if (!ui.init(hwnd)) return 1;
     SetTimer(hwnd, 1, 30, nullptr);
 
@@ -734,27 +768,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                              a.scrollGrab != 0;
         if (Clock::now() - lastDraw >= (engaged ? 15ms : 33ms)) {
             lastDraw = Clock::now();
-            ui.beginFrame(g_pending);
-            drawUi(a, ui, float(g_w) / ui.dpiScale(), float(g_h) / ui.dpiScale());
-            ui.endFrame();
-            if (a.settingsWnd) {
-                RECT scr{};
-                GetClientRect(a.settingsWnd, &scr);
-                g_setUi.beginFrame(g_setIn);
-                drawSettings(a, g_setUi,
-                             rc(0, 0, scr.right / g_setUi.dpiScale(),
-                                scr.bottom / g_setUi.dpiScale()));
-                g_setUi.endFrame();
-                g_setIn.pressed = g_setIn.released = false;
-                g_setIn.pressX = g_setIn.pressY = -1;
-                g_setIn.wheel = 0;
-            }
-            g_pending.pressed = g_pending.released = g_pending.dblclick = false;
-            g_pending.pressX = g_pending.pressY = g_pending.dblX = g_pending.dblY = -1;
-            g_pending.rpressed = false;
-            g_pending.rX = g_pending.rY = -1;
-            g_pending.wheel = 0;
-            handleMenu(a, hwnd); // after EndDraw: menus/dialogs run modal loops
+            paintFrame(a);
+            // After EndDraw: menus and dialogs run modal loops, and the timer
+            // keeps painting through them while this flag is up.
+            g_modal = true;
+            handleMenu(a, hwnd);
+            g_modal = false;
         }
         std::this_thread::sleep_for(engaged ? 1ms : 4ms);
     }

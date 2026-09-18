@@ -547,9 +547,56 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
     }
     if (ui.button(406, rc(r.right - 44, r.top + 8, 32, 26), L"»", cAccent))
         a.queueOpen = false;
-    const D2D1_RECT_F ql = rc(r.left + 6, r.top + 42, r.right - r.left - 12,
-                              r.bottom - r.top - 48);
+    // Room for the column header above the list and the running total below.
+    const D2D1_RECT_F ql = rc(r.left + 6, r.top + 66, r.right - r.left - 12,
+                              (std::max)(0.f, r.bottom - r.top - 92));
     a.rcQueueList = ql;
+
+    // TITLE | ARTIST | TIME across the space the row text occupies (the number
+    // and type tag on the left are fixed). Shares, normalised, so the columns
+    // follow the drawer as it is resized.
+    static const wchar_t* kQName[App::kQueueCols] = {L"TITLE", L"ARTIST", L"TIME"};
+    const float qcLeft = ql.left + 80, qcRight = ql.right - 12;
+    const float qcw = (std::max)(60.f, qcRight - qcLeft);
+    float qfs = 0.f;
+    for (float f : a.qColFrac) qfs += f;
+    float qx[App::kQueueCols]{}, qcW[App::kQueueCols]{};
+    {
+        float cx = qcLeft;
+        for (int v = 0; v < App::kQueueCols; ++v) {
+            qx[v] = cx;
+            qcW[v] = qcw * (a.qColFrac[v] / qfs);
+            cx += qcW[v];
+        }
+    }
+    {
+        const float hy = r.top + 44;
+        for (int v = 1; v < App::kQueueCols; ++v) { // draggable dividers
+            const D2D1_RECT_F dz = rc(qx[v] - 5, hy, 10, 20);
+            const bool overDz = hit(dz, ui.in.mx, ui.in.my);
+            if (overDz || a.qColDrag == v) a.hoverResize = true;
+            if (ui.in.pressed && hit(dz, ui.in.pressX, ui.in.pressY))
+                a.qColDrag = v;
+            ui.rect(rc(qx[v] - 4, hy, 1, 18),
+                    a.qColDrag == v || overDz ? cAccent : cBorder, 0);
+        }
+        if (!ui.in.down) a.qColDrag = -1;
+        if (a.qColDrag >= 1 && a.qColDrag < App::kQueueCols) {
+            // The drag moves width between the two neighbours only, so the
+            // set always still adds up and nothing else shifts under it.
+            const float pair = a.qColFrac[a.qColDrag - 1] + a.qColFrac[a.qColDrag];
+            const float minF = 0.08f * qfs;
+            float newL = (ui.in.mx - qx[a.qColDrag - 1]) / qcw * qfs;
+            newL = std::clamp(newL, minF, pair - minF);
+            a.qColFrac[a.qColDrag - 1] = newL;
+            a.qColFrac[a.qColDrag] = pair - newL;
+        }
+        for (int v = 0; v < App::kQueueCols; ++v)
+            ui.text(rc(qx[v] + 8, hy, (std::max)(0.f, qcW[v] - 16), 18),
+                    kQName[v], 10, cDim, v == App::kQueueCols - 1 ? 2 : 0, true);
+        ui.rect(rc(ql.left, hy + 19, ql.right - ql.left, 1), cBorder, 0);
+    }
+
     ui.clipPush(ql);
     if (hit(ql, ui.in.mx, ui.in.my) && ui.in.wheel != 0)
         a.queueScroll = std::clamp(a.queueScroll - ui.in.wheel * 3, 0.f,
@@ -591,8 +638,15 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
         ui.text(rc(row.left + 8, y, 26, 24), num, 12, cDim, 0, false);
         ui.text(rc(row.left + 34, y, 42, 24), typeTag(qm.type), 10,
                 qPlayed ? cDim : typeColor(qm.type), 0, true);
-        ui.text(rc(row.left + 80, y, row.right - row.left - 86, 24), qm.label, 13,
-                cText, 0, false);
+        // Title falls back to the combined label for rows with no tags.
+        ui.text(rc(qx[0], y, (std::max)(0.f, qcW[0] - 8), 24),
+                qm.title.empty() ? qm.label : qm.title, 13, cText, 0, false);
+        if (!qm.artist.empty())
+            ui.text(rc(qx[1], y, (std::max)(0.f, qcW[1] - 8), 24), qm.artist, 12,
+                    cDim, 0, false);
+        if (qm.durMs > 0)
+            ui.text(rc(qx[2], y, (std::max)(0.f, qcW[2] - 8), 24),
+                    fmtTime(double(qm.durMs) / 1000), 12, cDim, 2, false);
     }
     // Drop-target line while a drag hovers the list.
     if (a.dragging && hit(ql, ui.in.mx, ui.in.my)) {
@@ -604,4 +658,22 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
     }
     ui.clipPop();
     scrollbar(a, ui, 703, ql, a.queue.size(), 26, a.queueScroll);
+
+    // Running total. ponytail: track length, not cue in/out -- Match does not
+    // carry the markers, and the answer the operator wants is "how long until
+    // the queue runs dry", which is close enough either way.
+    double totalSec = 0;
+    bool anyUnknown = false;
+    for (const Match& m : a.queue) {
+        if (m.durMs > 0) totalSec += double(m.durMs) / 1000;
+        else anyUnknown = true;
+    }
+    const float fy = r.bottom - 25;
+    ui.rect(rc(ql.left, fy - 1, ql.right - ql.left, 1), cBorder, 0);
+    ui.text(rc(ql.left + 8, fy + 2, 120, 18), L"TOTAL", 10, cDim, 0, true);
+    // "~" when something in there has no known length, so the number never
+    // claims more precision than it has.
+    ui.text(rc(ql.right - 128, fy + 2, 120, 18),
+            (anyUnknown && totalSec > 0 ? L"~" : L"") + fmtTime(totalSec), 12,
+            a.queue.empty() ? cDim : cText, 2, true);
 }

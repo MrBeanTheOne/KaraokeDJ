@@ -36,6 +36,18 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
                          420.f);
     a.queueW = std::clamp(float(atof(getSetting(a.db, "queue_w", "330").c_str())),
                           300.f, 560.f);
+    { // queue columns: plain width shares, "0.50,0.32,0.18"
+        const std::string qs = getSetting(a.db, "queue_cols", "");
+        float f[App::kQueueCols]{};
+        if (sscanf_s(qs.c_str(), "%f,%f,%f", &f[0], &f[1], &f[2]) ==
+            App::kQueueCols) {
+            float sum = 0.f;
+            for (float v : f) sum += v;
+            if (sum > 0.f)
+                for (int k = 0; k < App::kQueueCols; ++k)
+                    a.qColFrac[k] = std::clamp(f[k] / sum, 0.08f, 0.84f);
+        }
+    }
     { // columns: "seq|show|frac" triplets, e.g. "0:1:0.34,1:1:0.24,..."
         const std::string cs = getSetting(a.db, "columns", "");
         int idx = 0;
@@ -149,6 +161,12 @@ void saveSettings(App& a, UINT winW, UINT winH) {
             cs += cb;
         }
         setSetting(a.db, "columns", cs);
+    }
+    {
+        char qb[48];
+        snprintf(qb, 48, "%.3f,%.3f,%.3f", a.qColFrac[0], a.qColFrac[1],
+                 a.qColFrac[2]);
+        setSetting(a.db, "queue_cols", qb);
     }
     setSetting(a.db, "idle_title", utf8(a.idleTitle));
     setSetting(a.db, "scan_tags", a.scanTags ? "1" : "0");

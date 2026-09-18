@@ -175,6 +175,11 @@ struct App {
     float sideW = 220.f; // resizable via the divider next to the sidebar
     bool resizingSide = false;
     float queueW = 330.f; // resizable via the divider left of the queue
+    // Queue columns: TITLE | ARTIST | TIME, dragged by the dividers between
+    // them exactly like the browser's. Shares, so they follow the drawer width.
+    static constexpr int kQueueCols = 3;
+    float qColFrac[kQueueCols] = {0.50f, 0.32f, 0.18f};
+    int qColDrag = -1;
     bool resizingQueue = false;
     int scrollGrab = 0;       // scrollbar being dragged (by widget id)
     float scrollGrabOff = 0;  // press offset inside the thumb
@@ -383,8 +388,12 @@ inline bool caretOn() { return (GetTickCount64() / 530) & 1; }
 
 inline std::wstring fmtTime(double sec) {
     if (sec < 0) sec = 0;
-    wchar_t b[16];
-    swprintf(b, 16, L"%d:%02d", int(sec) / 60, int(sec) % 60);
+    wchar_t b[24];
+    const int t = int(sec);
+    // Hours only when there are any: a queue total runs to hours, a track
+    // almost never does, and "87:14" reads as a mistake.
+    if (t >= 3600) swprintf(b, 24, L"%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60);
+    else swprintf(b, 24, L"%d:%02d", t / 60, t % 60);
     return b;
 }
 
