@@ -267,6 +267,11 @@ struct App {
     std::atomic<bool> bpmWaiting{false}; // stood down: a deck is playing
     std::atomic<bool> bpmFinished{false};
     std::atomic<int> bpmDone{0}, bpmTotal{0};
+    // Which pass owns the counters. A pass that had to be abandoned (a worker
+    // wedged inside Media Foundation) can still have that one thread alive;
+    // the generation stops it touching the next pass's state when it returns.
+    std::atomic<uint32_t> bpmGen{0};
+    std::atomic<bool> bpmGone{true}; // the coordinator has fully wound down
     // The file each worker currently has open, so a stall names itself instead
     // of leaving a frozen "n / total" and no clue which track did it.
     static constexpr int kBpmWorkers = 4;

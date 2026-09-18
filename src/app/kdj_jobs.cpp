@@ -92,17 +92,35 @@ std::wstring App::bpmStuckFile() {
     return L"";
 }
 
+// 100 ms ticks with no progress at all before a pass gives up on its last
+// worker. Tracks average ~0.09 s, so two minutes of complete silence across
+// every worker means one of them is never coming back.
+static constexpr int kStallTicks = 1200;
+
 void startBpmAnalysis(App& a) {
     if (a.scanning.load()) return; // the import-finished handler restarts us
     a.bpmStop.store(true);
-    if (a.bpmThread.joinable()) a.bpmThread.join();
+    if (a.bpmThread.joinable()) {
+        // The previous pass may be parked on a worker stuck inside Media
+        // Foundation. It has already published its result, so do not let it
+        // hold the UI thread here -- wait briefly, then walk away. bpmGen
+        // keeps that thread from touching anything this pass owns.
+        for (int i = 0; i < 20 && !a.bpmGone.load(); ++i)
+            std::this_thread::sleep_for(50ms);
+        if (a.bpmGone.load())
+            a.bpmThread.join();
+        else
+            a.bpmThread.detach();
+    }
+    const uint32_t gen = a.bpmGen.fetch_add(1, std::memory_order_acq_rel) + 1;
+    a.bpmGone.store(false);
     a.bpmStop.store(false);
     a.bpmDone.store(0);
     a.bpmTotal.store(0);
     a.bpmWaiting.store(false);
     const std::wstring dbPath = a.dbPath;
     a.bpmBusy.store(true);
-    a.bpmThread = std::thread([&a, dbPath]() {
+    a.bpmThread = std::thread([&a, dbPath, gen]() {
         // Coordinator: builds the worklist, then hands it to a few workers.
         // The cost of a library pass is almost entirely DECODE, which is
         // per-file independent, so this parallelises nearly linearly — a
@@ -145,6 +163,7 @@ void startBpmAnalysis(App& a) {
         const unsigned nWorkers =
             std::clamp(hw ? hw / 2 : 2u, 2u, unsigned(App::kBpmWorkers));
         std::vector<std::thread> workers;
+        std::atomic<unsigned> running{nWorkers};
         for (unsigned w = 0; w < nWorkers; ++w) {
             workers.emplace_back([&, w]() {
                 // Each worker owns its COM apartment, its decoder and its own
@@ -158,6 +177,7 @@ void startBpmAnalysis(App& a) {
                     if (db.open(dbPath)) {
                         for (;;) {
                             if (a.bpmStop.load()) break;
+                            if (a.bpmGen.load() != gen) break; // superseded
                             // Stand down while a deck is live. Checked BEFORE
                             // claiming an index, so a held worker never sits
                             // on a row nobody else can take.
@@ -182,6 +202,9 @@ void startBpmAnalysis(App& a) {
                             // "nothing found" would retire it for good.
                             const bool got =
                                 analyzeTrack(r.path, bpm, key, &a.bpmStop);
+                            // If this pass was abandoned while we were inside
+                            // that call, the counters belong to someone else.
+                            if (a.bpmGen.load() != gen) break;
                             { // done with it, whatever the outcome
                                 std::lock_guard<std::mutex> lk(a.bpmNowMu);
                                 a.bpmNow[w].clear();
@@ -205,13 +228,34 @@ void startBpmAnalysis(App& a) {
                     }
                 }
                 CoUninitialize();
+                running.fetch_sub(1, std::memory_order_acq_rel);
             });
         }
-        for (auto& t : workers) t.join(); // rows/next outlive every worker
-        CoUninitialize();
+        // Media Foundation can block inside source resolution on a file it
+        // cannot make sense of, and no cancel flag reaches that -- one row out
+        // of 98k left the readout frozen at n-1 for good. So call the pass
+        // over when it stops making progress rather than when the last worker
+        // gets home. A straggler keeps this thread parked afterwards, which
+        // costs nothing at background priority: the next pass detaches it
+        // instead of waiting, and shutdown has its own deadline.
+        int last = -1, idle = 0;
+        while (running.load(std::memory_order_acquire) > 0) {
+            const int done = a.bpmDone.load(std::memory_order_relaxed);
+            // A deck playing stops the count for a whole song, by design.
+            if (done != last || a.bpmWaiting.load(std::memory_order_relaxed)) {
+                last = done;
+                idle = 0;
+            } else if (++idle > kStallTicks) {
+                break;
+            }
+            std::this_thread::sleep_for(100ms);
+        }
         a.bpmWaiting.store(false);
         a.bpmBusy.store(false);
         if (a.bpmTotal.load() > 0) a.bpmFinished.store(true);
+        for (auto& t : workers) t.join(); // rows/next outlive every worker
+        CoUninitialize();
+        a.bpmGone.store(true);
     });
 }
 
