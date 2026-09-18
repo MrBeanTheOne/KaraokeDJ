@@ -459,6 +459,8 @@ void engineTick(App& a) {
     const double dt = std::chrono::duration<double>(now - a.lastTick).count();
     a.lastTick = now;
     a.driveMask = GetLogicalDrives(); // bitmask read: cheap enough per frame
+    // The mixer has acknowledged the posted fade; the fadeTo guards take over.
+    if (a.fadePosted && a.mixer.fadeTo.load() >= 0) a.fadePosted = false;
 
     if (a.pendingFade >= 0 &&
         a.decks[a.pendingFade]->state() == DeckState::Empty) {
@@ -471,6 +473,7 @@ void engineTick(App& a) {
             a.retireAfterFade = a.mixer.activeDeck.load(); // outgoing deck, if any
             MixCommand c{pf, uint64_t(a.pendingDur * kRate), FadeCurve::EqualPower};
             a.mixer.cmds.push(&c, 1);
+            a.fadePosted = true; // until the mixer publishes fadeTo
             a.pendingFade = -1;
             a.status = L"playing: " + a.label[pf];
             if (a.deckMatch[pf].id) { // tonight's history: every track on air
@@ -508,6 +511,7 @@ void engineTick(App& a) {
         // cue (manual, or a crash-restored one) that must survive.
         const int other = a.retireAfterFade;
         a.retireAfterFade = -1;
+        a.fadePosted = false; // a fade short enough to finish between ticks
         if (act >= 0) {
             if (other >= 0 && other != act) {
                 if (a.repeatOn && !a.label[other].empty())
@@ -522,7 +526,7 @@ void engineTick(App& a) {
     // Preload: keep the idle deck holding the next queued track from the
     // moment the current one starts — a bad file fails NOW, minutes early,
     // not at the transition (and the operator can see/scrub the cue).
-    if (a.pendingFade < 0 && a.mixer.fadeTo.load() < 0) {
+    if (a.pendingFade < 0 && !a.fadePosted && a.mixer.fadeTo.load() < 0) {
         const int act = a.mixer.activeDeck.load();
         int idle;
         if (act >= 0) {
@@ -554,7 +558,7 @@ void engineTick(App& a) {
         }
     }
     // Queue / cued-deck advance.
-    if (a.pendingFade < 0 && a.mixer.fadeTo.load() < 0) {
+    if (a.pendingFade < 0 && !a.fadePosted && a.mixer.fadeTo.load() < 0) {
         const int act = a.mixer.activeDeck.load();
         if (act >= 0) {
             const int idle = 1 - act;

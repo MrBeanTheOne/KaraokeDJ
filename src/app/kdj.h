@@ -115,6 +115,12 @@ struct App {
     D2D1_RECT_F rcWave[2]{};        // waveform strips (marker right-click)
     bool autoCued[2] = {false, false}; // cue was pulled from the queue head
     int pendingFade = -1;
+    // A MixCommand has been pushed but the mixer (audio thread) has not
+    // published fadeTo yet. engineTick runs every few ms and the mixer only
+    // republishes once per render buffer, so without this the advance check
+    // sees "no pending fade, no running fade", re-triggers on the outgoing
+    // deck that is still activeDeck at EOS, and posts the transition twice.
+    bool fadePosted = false;
     double pendingDur = 3.0;
     int retireAfterFade = -1; // deck the running fade came from (-1 = silence)
     int lastFreed = -1;       // deck most recently stopped: next track prefers
