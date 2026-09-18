@@ -130,7 +130,6 @@ struct App {
     bool repeatOn = false; // finished tracks rejoin the queue tail
     MixMode mixMode = MixMode::Fade;
     uint64_t lastFades = 0;
-    Clock::time_point lastTick = Clock::now();
 
     // Library / navigation
     Db db;

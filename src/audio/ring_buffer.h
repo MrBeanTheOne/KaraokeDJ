@@ -15,8 +15,6 @@ public:
     size_t size() const {
         return w_.load(std::memory_order_acquire) - r_.load(std::memory_order_acquire);
     }
-    size_t freeSpace() const { return buf_.size() - size(); }
-    size_t capacity() const { return buf_.size(); }
 
     // Producer. Returns number of items actually written.
     size_t push(const T* src, size_t n) {

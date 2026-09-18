@@ -466,8 +466,6 @@ void scrollbar(App& a, Ui& ui, int id, const D2D1_RECT_F& list, size_t count,
 
 void engineTick(App& a) {
     const auto now = Clock::now();
-    const double dt = std::chrono::duration<double>(now - a.lastTick).count();
-    a.lastTick = now;
     a.driveMask = GetLogicalDrives(); // bitmask read: cheap enough per frame
     // The mixer has acknowledged the posted fade; the fadeTo guards take over.
     if (a.fadePosted && a.mixer.fadeTo.load() >= 0) a.fadePosted = false;

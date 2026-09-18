@@ -34,17 +34,12 @@ public:
     // Async: worker drops queued frames and repositions (revives after EOS).
     void seek(int64_t hns) { pendingSeekHns_.store(hns); }
 
-    bool finished() const { return eos_.load() && queueEmpty(); }
     uint64_t dropped() const { return dropped_.load(); }
     uint32_t width() const { return w_; }
     uint32_t height() const { return h_; }
 
 private:
     void workerMain();
-    bool queueEmpty() const {
-        std::lock_guard<std::mutex> g(mu_);
-        return q_.empty();
-    }
 
     void ensureD3D(); // GPU decode device, created once, kept across opens
 
