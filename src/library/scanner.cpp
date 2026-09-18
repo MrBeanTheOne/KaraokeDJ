@@ -266,6 +266,9 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
                    "fold(?3)||char(10)||fold(?4)||char(10)||fold(?1)) "
                    "ON CONFLICT(path) DO UPDATE SET type=?2,title=?3,artist=?4,"
                    "duration_ms=?5,file_size=?6,modified_time=?7,genre=?8,year=?9,"
+                   // only changed files reach this statement, so a file that
+                   // was marked unreadable gets another chance once it changes
+                   "status='ok',"
                    "bpm=CASE WHEN ?10>0 THEN ?10 ELSE bpm END,"
                    "search_f=fold(?3)||char(10)||fold(?4)||char(10)||fold(?1)");
         up.bind(1, utf8(w.path)).bind(2, w.type).bind(3, utf8(title)).bind(4, utf8(artist));

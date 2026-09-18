@@ -97,6 +97,29 @@ std::wstring App::bpmStuckFile() {
 // every worker means one of them is never coming back.
 static constexpr int kStallTicks = 1200;
 
+// A file sitting right there that still cannot be analysed is a durable fact
+// about the FILE. A file that is missing, on an unplugged drive, or behind a
+// network path that is not answering is a fact about the MACHINE, and must be
+// left alone to be retried -- that distinction is the whole reason 7000 tracks
+// were once retired by mistake. UNC paths are never judged: deciding would
+// mean blocking on the very thing that is not answering.
+static bool presentOnDisk(const std::wstring& p, uint32_t driveMask) {
+    if (p.size() < 3 || p[1] != L':') return false;
+    if (pathOffline(p, driveMask)) return false;
+    return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+// media_item.status was in the schema and unused; this is what it is for now.
+// A rescan of a changed file resets it to 'ok', so re-encoding a bad track is
+// all it takes to have another go at it.
+static void markUndecodable(Db& db, const std::wstring& path) {
+    Db::Stmt s;
+    if (!db.prepare(s, "UPDATE media_item SET status='undecodable' WHERE path=?1"))
+        return;
+    s.bind(1, utf8(path));
+    s.run();
+}
+
 void startBpmAnalysis(App& a) {
     if (a.scanning.load()) return; // the import-finished handler restarts us
     a.bpmStop.store(true);
@@ -136,6 +159,7 @@ void startBpmAnalysis(App& a) {
                             // scan covers those on first play
                 db.prepare(q, "SELECT id, path FROM media_item "
                               "WHERE (bpm=0 OR IFNULL(music_key,0)=0) "
+                              "AND IFNULL(status,'ok') <> 'undecodable' "
                               "AND type IN ('audio','mp3g','video')");
                 while (q.step())
                     rows.push_back({q.colInt(0), wide(q.colText(1))});
@@ -210,6 +234,11 @@ void startBpmAnalysis(App& a) {
                                 a.bpmNow[w].clear();
                             }
                             if (!got) {
+                                // NOT on cancel: a stopped pass says nothing
+                                // about the file.
+                                if (!a.bpmStop.load() &&
+                                    presentOnDisk(r.path, a.driveMask))
+                                    markUndecodable(db, r.path);
                                 a.bpmDone.fetch_add(1);
                                 continue;
                             }
@@ -246,6 +275,15 @@ void startBpmAnalysis(App& a) {
                 last = done;
                 idle = 0;
             } else if (++idle > kStallTicks) {
+                // Whatever is still open is what wedged us, and unlike a
+                // worker that returns, it can never record that itself.
+                Db mark;
+                if (mark.open(dbPath)) {
+                    std::lock_guard<std::mutex> lk(a.bpmNowMu);
+                    for (const std::wstring& f : a.bpmNow)
+                        if (!f.empty() && presentOnDisk(f, a.driveMask))
+                            markUndecodable(mark, f);
+                }
                 break;
             }
             std::this_thread::sleep_for(100ms);

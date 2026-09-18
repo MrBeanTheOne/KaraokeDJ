@@ -782,6 +782,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     a.scanProg.cancel.store(true); // closing cancels a running import promptly;
     a.bpmStop.store(true);         // committed rows survive either way
     a.fullOut.reset();             // a window: destroy it on the thread that made it
+    // Out of sight before the wait below. A visible top-level window that
+    // stops answering messages gets Windows' "(Not Responding)" ghost painted
+    // over it, so a straggler made every close look like a crash.
+    ShowWindow(hwnd, SW_HIDE);
 
     // Everything durable is on disk by now (settings, snapshot, snap_clean).
     // All that is left is winding down background threads, and several of them
