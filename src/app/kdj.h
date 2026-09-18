@@ -335,6 +335,12 @@ struct App {
 
     MenuReq menu;
     bool quitConfirmed = false; // the close warning was accepted
+    // Showtime mode: borderless, covering the taskbar, no title bar. The
+    // placement from before the switch is kept so leaving it restores the
+    // window the operator actually sized.
+    bool appFull = false;
+    bool fullscreenReq = false; // button pressed; the main loop owns the HWND
+    WINDOWPLACEMENT preFull{sizeof(WINDOWPLACEMENT)};
     bool winMax = true;  // open maximized (win_max); win_w/h are the size
                          // the window restores to when un-maximized
     // Mounted drive letters as a bitmask (GetLogicalDrives). Pure kernel

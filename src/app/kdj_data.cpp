@@ -120,7 +120,8 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     }
     a.videoFit = std::clamp(atoi(getSetting(a.db, "video_fit", "0").c_str()), 0, 2);
     a.audioDevice = getSetting(a.db, "audio_device", "");
-    a.winMax = getSetting(a.db, "win_max", "1") == "1"; // full screen by default
+    a.winMax = getSetting(a.db, "win_max", "1") == "1"; // maximized by default
+    a.appFull = getSetting(a.db, "win_full", "0") == "1"; // showtime mode
     winW = UINT((std::max)(900, atoi(getSetting(a.db, "win_w", "0").c_str())));
     winH = UINT((std::max)(600, atoi(getSetting(a.db, "win_h", "0").c_str())));
 }
@@ -174,6 +175,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "video_fit", std::to_string(a.videoFit));
     setSetting(a.db, "audio_device", a.audioDevice);
     setSetting(a.db, "win_max", a.winMax ? "1" : "0");
+    setSetting(a.db, "win_full", a.appFull ? "1" : "0");
     setSetting(a.db, "win_w", std::to_string(winW));
     setSetting(a.db, "win_h", std::to_string(winH));
 }

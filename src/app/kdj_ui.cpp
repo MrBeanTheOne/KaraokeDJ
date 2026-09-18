@@ -38,10 +38,15 @@ void drawUi(App& a, Ui& ui, float W, float H) {
     if (a.webOn || !a.reqInbox.empty()) { // phone-request inbox badge
         wchar_t rl[32];
         swprintf(rl, 32, L"REQUESTS (%d)", int(a.reqInbox.size()));
-        if (ui.toggle(402, rc(W - 446, 44, 132, 30), rl, !a.reqInbox.empty(),
+        if (ui.toggle(402, rc(W - 566, 44, 132, 30), rl, !a.reqInbox.empty(),
                       cGreen))
             a.prompt = App::Prompt::Requests;
     }
+    // Showtime: borderless over the taskbar, no title bar. The main loop
+    // owns the HWND, so this only raises a request.
+    if (ui.toggle(403, rc(W - 426, 44, 110, 30), L"FULL SCREEN", a.appFull,
+                  cGreen))
+        a.fullscreenReq = true;
     // SETTINGS opens its own window (main loop services the request).
     if (ui.toggle(401, rc(W - 306, 44, 110, 30), L"SETTINGS",
                   a.settingsWnd != nullptr, cAccent))

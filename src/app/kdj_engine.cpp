@@ -331,6 +331,16 @@ void commitPrompt(App& a) {
             }
             a.mixer.activeDeck.store(-1);
             a.pendingFade = -1;
+            // End of the night: tonight's play history and the singer
+            // rotation go too, so the next launch opens on a fresh room
+            // rather than yesterday's singers and green played-dots.
+            a.db.exec("DELETE FROM play_history WHERE started_at > "
+                      "strftime('%s','now') - 43200");
+            a.db.exec("DELETE FROM singer_queue_item");
+            a.playedTonight.clear();
+            a.history.clear();
+            a.singers.clear();
+            a.singingItemId = -1;
             a.quitConfirmed = true;
             break;
         case App::ConfirmAction::ClearHistory:

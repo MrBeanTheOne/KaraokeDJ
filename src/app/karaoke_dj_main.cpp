@@ -44,6 +44,32 @@ static LRESULT CALLBACK settingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
+// Showtime mode. rcMonitor (not rcWork) is what covers the taskbar, and
+// dropping WS_OVERLAPPEDWINDOW is what removes the title bar with its
+// minimize/close. HWND_TOP rather than TOPMOST so dialogs and the video
+// output can still come forward.
+static void setAppFullscreen(App& a, HWND h, bool on) {
+    if (on == a.appFull) return;
+    if (on) {
+        a.preFull.length = sizeof(WINDOWPLACEMENT);
+        GetWindowPlacement(h, &a.preFull);
+        MONITORINFO mi{sizeof(mi)};
+        if (!GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mi))
+            return;
+        SetWindowLongPtrW(h, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+        SetWindowPos(h, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
+                     mi.rcMonitor.right - mi.rcMonitor.left,
+                     mi.rcMonitor.bottom - mi.rcMonitor.top,
+                     SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+    } else {
+        SetWindowLongPtrW(h, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+        SetWindowPlacement(h, &a.preFull);
+        SetWindowPos(h, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    }
+    a.appFull = on;
+}
+
 static void applyDarkTitlebar(HWND hwnd) {
     // DWMWA_USE_IMMERSIVE_DARK_MODE = 20; 19 pre-20H1.
     using DwmSetFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
@@ -243,8 +269,9 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             if (IsIconic(h)) ShowWindow(h, SW_RESTORE);
             SetForegroundWindow(h);
             askConfirm(*g_app, App::ConfirmAction::QuitApp, L"CLOSE KARAOKE DJ?",
-                       L"The decks and the queue will be cleared.",
-                       L"Your library, playlists, rotation and history are kept.");
+                       L"Decks, queue, singer rotation and tonight's history "
+                       L"will be cleared.",
+                       L"Your library, playlists, markers and settings are kept.");
             return 0;
         }
         g_closed = true;
@@ -325,6 +352,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     // Opens filling the screen unless the operator left it un-maximized last
     // time; win_w/win_h are then the size it restores to.
     ShowWindow(hwnd, a.winMax ? SW_SHOWMAXIMIZED : SW_SHOW);
+    if (a.appFull) { // restore showtime mode; the flag is set by loadSettings
+        a.appFull = false; // the window is not fullscreen yet
+        setAppFullscreen(a, hwnd, true);
+    }
 
     if (!a.out.start(kRate, kCh, a.mixer, wide(a.audioDevice))) {
         MessageBoxW(hwnd, L"WASAPI audio init failed", L"Karaoke DJ", MB_ICONERROR);
@@ -446,6 +477,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                 a.searchDirty = true;
                 a.libScroll = 0;
             }
+            // Nothing left to back out of: Esc is the way out of showtime
+            // mode, which has no title bar to close from.
+            else if (a.appFull) setAppFullscreen(a, hwnd, false);
         }
         g_pending.enter = g_pending.del = g_pending.pgdn = g_pending.pgup = false;
         g_pending.pauseKey = g_pending.esc = false;
@@ -638,6 +672,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             }
         }
         if (a.quitConfirmed) break; // close warning accepted: decks already wiped
+        if (a.fullscreenReq) { // header button
+            a.fullscreenReq = false;
+            setAppFullscreen(a, hwnd, !a.appFull);
+        }
         if (a.settingsOpenReq) { // header button: toggle the settings window
             a.settingsOpenReq = false;
             if (a.settingsWnd) PostMessageW(a.settingsWnd, WM_CLOSE, 0, 0);
@@ -715,6 +753,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     // returns the maximized size, which would then become the restore size.
     WINDOWPLACEMENT wp{sizeof(wp)};
     GetWindowPlacement(hwnd, &wp);
+    // In showtime mode the window IS the whole monitor, so the size worth
+    // remembering is the one from before the switch.
+    if (a.appFull) wp = a.preFull;
     a.winMax = wp.showCmd == SW_SHOWMAXIMIZED ||
                (wp.showCmd == SW_SHOWMINIMIZED && (wp.flags & WPF_RESTORETOMAXIMIZED));
     const RECT& wr = wp.rcNormalPosition;

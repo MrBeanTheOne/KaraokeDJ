@@ -97,10 +97,14 @@ Settings) and points you at the download when one exists.
   to clear for a new night, search any singer to see everything they've sung.
 - **Session snapshots**: if the laptop dies mid-gig, relaunching restores the
   night exactly where it stopped. Closing on purpose asks first, then clears
-  the decks and the queue for a fresh start.
+  the decks, the queue, the singer rotation and tonight's played marks, so the
+  next night opens on a fresh room. Your library, playlists and markers stay.
 - **Audio device recovery**: pulling the USB interface mid-song recovers
   without a restart.
 - **Second-screen video output** with letterbox / fill / stretch fit modes.
+- **FULL SCREEN mode** for the operator window: one button next to VIDEO OUT
+  hides the title bar and covers the taskbar, so a stray click can never
+  minimise or close you mid-song. Esc brings the window back.
 - **Keyboard shortcuts** for gig ergonomics: `Space` pause/resume the live
   deck, `Ctrl+N` next singer, `↑`/`↓` walk the track list, `Enter` queue,
   `PgDn` skip, `Del` remove from queue, `Esc` back out.
