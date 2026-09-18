@@ -182,8 +182,12 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (auto getDpi = reinterpret_cast<GetDpiFn>(GetProcAddress(
                 GetModuleHandleW(L"user32.dll"), "GetDpiForWindow")))
             if (const UINT d = getDpi(h)) dpi = d;
+        // Width is the one that matters (the deck row collides below ~1050).
+        // Height stays at the 600 the settings loader has always used: a 720p
+        // screen cannot fit a 720-tall window plus its frame, and pinning it
+        // there would push the bottom of the UI off a small display.
         mmi->ptMinTrackSize.x = MulDiv(1140, dpi, 96);
-        mmi->ptMinTrackSize.y = MulDiv(720, dpi, 96);
+        mmi->ptMinTrackSize.y = MulDiv(600, dpi, 96);
         return 0;
     }
     case WM_DROPFILES: {

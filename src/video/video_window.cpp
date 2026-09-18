@@ -14,9 +14,14 @@
 namespace {
 struct MonRects {
     std::vector<RECT> rects;
+    std::vector<bool> primary;
 };
-BOOL CALLBACK monEnum(HMONITOR, HDC, LPRECT r, LPARAM p) {
-    reinterpret_cast<MonRects*>(p)->rects.push_back(*r);
+BOOL CALLBACK monEnum(HMONITOR m, HDC, LPRECT r, LPARAM p) {
+    auto* out = reinterpret_cast<MonRects*>(p);
+    MONITORINFO mi{sizeof(mi)};
+    out->rects.push_back(*r);
+    out->primary.push_back(GetMonitorInfoW(m, &mi) &&
+                           (mi.dwFlags & MONITORINFOF_PRIMARY) != 0);
     return TRUE;
 }
 D2D1_RENDER_TARGET_PROPERTIES rtProps() {
@@ -32,6 +37,19 @@ int VideoWindow::monitorCount() {
     MonRects mons;
     EnumDisplayMonitors(nullptr, nullptr, monEnum, reinterpret_cast<LPARAM>(&mons));
     return int(mons.rects.size());
+}
+
+// The screen to put the show on when the operator has not picked one. Always
+// the first NON-PRIMARY monitor: the primary is where the operator app lives.
+// This used to be "the last one EnumDisplayMonitors returned", which assumes
+// the external is enumerated last — it is not, and on a real two-screen rig it
+// put the lyrics on the operator's own screen.
+int VideoWindow::defaultMonitor() {
+    MonRects mons;
+    EnumDisplayMonitors(nullptr, nullptr, monEnum, reinterpret_cast<LPARAM>(&mons));
+    for (size_t i = 0; i < mons.primary.size(); ++i)
+        if (!mons.primary[i]) return int(i);
+    return 0; // single screen: the app and the show share it
 }
 
 RECT VideoWindow::monitorRect(int index) {

@@ -50,6 +50,8 @@ bool loadImageFile(const std::wstring& path, VideoFrame& out, int maxW = 1024);
 class VideoWindow {
 public:
     static int monitorCount();
+    // First non-primary screen (the TV), else 0. See the note in the .cpp.
+    static int defaultMonitor();
     static RECT monitorRect(int index); // {0,0,0,0} if out of range
 
     bool create(int monitor, int cascade = 0); // cascade offsets dev windows

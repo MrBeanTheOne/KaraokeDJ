@@ -53,10 +53,16 @@ void drawUi(App& a, Ui& ui, float W, float H) {
             a.outMonitor = -1;
         } else {
             const int n = VideoWindow::monitorCount();
-            const int m = a.chosenMonitor >= 0 && a.chosenMonitor < n ? a.chosenMonitor
-                          : n > 1 ? n - 1 : 0;
+            const int m = a.chosenMonitor >= 0 && a.chosenMonitor < n
+                              ? a.chosenMonitor
+                              : VideoWindow::defaultMonitor();
             a.fullOut = std::make_unique<VideoWindow>();
-            if (a.fullOut->create(m)) a.outMonitor = a.chosenMonitor = m;
+            // Deliberately does NOT latch chosenMonitor: only the right-click
+            // menu records a deliberate choice. Latching the auto-derived one
+            // wrote video_monitor=0 during single-screen use, and that 0 then
+            // beat the default once a TV was plugged in — putting the lyrics
+            // on the operator's own screen.
+            if (a.fullOut->create(m)) a.outMonitor = m;
             else a.fullOut.reset();
         }
     }
