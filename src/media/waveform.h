@@ -12,7 +12,12 @@
 // drive, a missing codec. Callers must leave the stored values alone in that
 // case: writing a "nothing found" result would permanently retire a track
 // that was only temporarily unreachable.
-bool analyzeTrack(const std::wstring& path, int& bpm, int& key);
+// Pass a cancel flag to abort mid-file: the analyser is joined from the UI
+// thread on shutdown, so a single slow track must not be able to hold the
+// close. Cancelled counts as "not analysed" (returns false), which is what we
+// want -- the row is left for the next launch.
+bool analyzeTrack(const std::wstring& path, int& bpm, int& key,
+                  const std::atomic<bool>* cancel = nullptr);
 
 // Decodes a whole track on a background thread into kBins peak values for the
 // deck waveform strip. Bins become valid left-to-right while scanning; the UI

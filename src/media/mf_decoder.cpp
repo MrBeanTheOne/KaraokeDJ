@@ -11,6 +11,7 @@ bool MFDecoder::initMF() {
 
 bool MFDecoder::open(const std::wstring& path, uint32_t rate, uint32_t ch) {
     close();
+    ticks_ = 0;
 
     IMFAttributes* attrs = nullptr;
     MFCreateAttributes(&attrs, 1);
@@ -51,7 +52,20 @@ bool MFDecoder::readChunk(std::vector<float>& out) {
         if (sample) sample->Release();
         return false;
     }
-    if (!sample) return true; // stream tick, no data this call
+    if (!sample) {
+        // A stream tick: S_OK, no sample, and ENDOFSTREAM NOT set. Normal for
+        // a gap, but some malformed files tick forever without ever ending —
+        // and every caller here loops "until readChunk returns false", so that
+        // is an infinite loop at 100% CPU with no way out. It wedged a library
+        // pass at 97812/97813 and then hung the app on close, because shutdown
+        // joins the analyser from the UI thread. Bound it once, here, so all
+        // four call sites (analyzer, deck decode, waveform scan, dump_chroma)
+        // are covered.
+        // ponytail: a flat cap, not a timeout — ticks come back immediately, so
+        // 1000 of them is instant; raise it only if a real file ever needs more.
+        return ++ticks_ < kMaxTicks;
+    }
+    ticks_ = 0;
 
     IMFMediaBuffer* buf = nullptr;
     if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buf))) {
@@ -81,6 +95,7 @@ uint64_t MFDecoder::durationFrames(uint32_t rate) const {
 
 void MFDecoder::seekTo(int64_t hns) {
     if (!reader_) return;
+    ticks_ = 0;
     PROPVARIANT var{};
     var.vt = VT_I8;
     var.hVal.QuadPart = hns;

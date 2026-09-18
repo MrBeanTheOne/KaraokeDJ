@@ -762,19 +762,38 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     saveSettings(a, UINT(wr.right - wr.left), UINT(wr.bottom - wr.top));
     saveSnapshot(a); // final state, then mark the exit graceful
     setSetting(a.db, "snap_clean", "1");
-    if (a.pickThread.joinable()) a.pickThread.join();
     a.scanProg.cancel.store(true); // closing cancels a running import promptly;
-    if (a.scanThread.joinable()) a.scanThread.join(); // committed rows survive
-    a.bpmStop.store(true); // finished BPMs are already committed row-by-row
-    if (a.bpmThread.joinable()) a.bpmThread.join();
-    if (a.updThread.joinable()) a.updThread.join();
-    stopWatcher(a);
-    a.web.stop();
-    if (a.ytThread.joinable()) a.ytThread.join();
-    a.fullOut.reset();
-    a.out.stop();
-    a.deckA.stopAndUnload();
-    a.deckB.stopAndUnload();
+    a.bpmStop.store(true);         // committed rows survive either way
+    a.fullOut.reset();             // a window: destroy it on the thread that made it
+
+    // Everything durable is on disk by now (settings, snapshot, snap_clean).
+    // All that is left is winding down background threads, and several of them
+    // can block on the outside world: Media Foundation on a dying drive, the
+    // update check on venue wifi, yt-dlp on a stalled download. These joins run
+    // on the UI thread, so one wedged thread is a window that will not close in
+    // the middle of a gig -- which is exactly what happened. Give them a
+    // deadline and then leave; there is nothing left to lose by exiting hard.
+    std::atomic<bool> reaped{false};
+    std::thread reaper([&a, &reaped]() {
+        if (a.pickThread.joinable()) a.pickThread.join();
+        if (a.scanThread.joinable()) a.scanThread.join();
+        if (a.bpmThread.joinable()) a.bpmThread.join();
+        if (a.updThread.joinable()) a.updThread.join();
+        stopWatcher(a);
+        a.web.stop();
+        if (a.ytThread.joinable()) a.ytThread.join();
+        a.out.stop();
+        a.deckA.stopAndUnload();
+        a.deckB.stopAndUnload();
+        reaped.store(true, std::memory_order_release);
+    });
+    for (int i = 0; i < 500 && !reaped.load(std::memory_order_acquire); ++i)
+        Sleep(10); // 5 s is far longer than an orderly wind-down needs
+    if (!reaped.load(std::memory_order_acquire)) {
+        reaper.detach();
+        TerminateProcess(GetCurrentProcess(), 0); // never returns
+    }
+    reaper.join();
     ui.shutdown();
     return 0;
 }

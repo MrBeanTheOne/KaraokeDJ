@@ -166,7 +166,7 @@ void startBpmAnalysis(App& a) {
                             // open at all (unplugged drive) is left untouched
                             // so it gets another go next launch — recording
                             // "nothing found" would retire it for good.
-                            if (!analyzeTrack(r.path, bpm, key)) {
+                            if (!analyzeTrack(r.path, bpm, key, &a.bpmStop)) {
                                 a.bpmDone.fetch_add(1);
                                 continue;
                             }

@@ -38,7 +38,8 @@ static int bpmFromOnset(std::vector<float>& onset) {
     return bestLag > 0 ? int(hopHz * 60.0 / bestLag + 0.5) : 0;
 }
 
-bool analyzeTrack(const std::wstring& path, int& bpm, int& key) {
+bool analyzeTrack(const std::wstring& path, int& bpm, int& key,
+                  const std::atomic<bool>* cancel) {
     bpm = 0;
     key = -1;
     MFDecoder dec;
@@ -61,6 +62,7 @@ bool analyzeTrack(const std::wstring& path, int& bpm, int& key) {
     uint32_t hopN = 0;
     KeyDetector kd;
     while (onset.size() < maxHops) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) return false;
         chunk.clear();
         if (!dec.readChunk(chunk)) break;
         kd.feed(chunk.data(), chunk.size() / 2); // same decode, no extra pass

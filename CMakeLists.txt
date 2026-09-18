@@ -98,6 +98,13 @@ add_executable(test_core tests/unit/test_core.cpp src/karaoke/cdg_renderer.cpp
   src/playback/pitch_shifter.cpp src/media/key_detect.cpp)
 target_include_directories(test_core PRIVATE src)
 
+# Decode robustness: damaged files must return instead of spinning, and the
+# analyser must be cancellable. Needs the repo root as CWD for the fixtures.
+add_executable(test_decode tests/unit/test_decode.cpp
+  src/media/mf_decoder.cpp src/media/waveform.cpp src/media/key_detect.cpp)
+target_include_directories(test_decode PRIVATE src)
+target_link_libraries(test_decode PRIVATE mfplat mfreadwrite mfuuid ole32)
+
 # ------------------------------------------------------------------ installer
 # `cpack -G NSIS -C Release` in build/ produces KaraokeDJ-<ver>-win64.exe:
 # installs the operator app + librarian CLI to Program Files, Start-menu and
