@@ -15,6 +15,8 @@
 // ---------------------------------------------------------------- phone page
 // One self-contained mobile page, dark to match the app. Vanilla JS: name box
 // (remembered per phone), debounced search, request buttons.
+// ponytail: single EN page for both languages — the served copy flips
+// "const FR=0" to 1 and the page's FR block swaps the visible strings.
 static const char kPage[] = R"HTML(<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -64,25 +66,60 @@ static const char kPage[] = R"HTML(<!doctype html>
   #gate[hidden] { display: none; }
 </style></head><body>
 <h1>KARAOKE DJ</h1>
-<p class="sub">Search a song, tap REQUEST — the DJ adds you to the rotation.</p>
-<label>YOUR NAME</label>
+<p class="sub" id="sub">Search a song, tap REQUEST — the DJ adds you to the rotation.</p>
+<label id="lname">YOUR NAME</label>
 <input id="name" maxlength="40" placeholder="Who's singing?" autocomplete="off">
 <div id="mystat"></div>
-<label>FIND A SONG</label>
+<label id="lfind">FIND A SONG</label>
 <input id="q" placeholder="Title or artist…" autocomplete="off">
 <div id="list"><p class="hint">Type at least 2 letters to search.</p></div>
 <div id="toast"></div>
 <div id="gate" hidden>
   <h1>KARAOKE DJ</h1>
-  <p class="sub">This party needs a password — ask the DJ.</p>
-  <label>PASSWORD</label>
+  <p class="sub" id="gsub">This party needs a password — ask the DJ.</p>
+  <label id="lpw">PASSWORD</label>
   <input id="pw" type="password" autocomplete="off">
   <button id="go">ENTER</button>
   <p id="gerr" class="hint"></p>
 </div>
 <script>
 "use strict";
+const FR=0; /* server flips this digit when the app language is French */
 const $ = id => document.getElementById(id);
+const S = {
+  sub: "Search a song, tap REQUEST — the DJ adds you to the rotation.",
+  lname: "YOUR NAME", namePh: "Who's singing?", lfind: "FIND A SONG",
+  qPh: "Title or artist…", gsub: "This party needs a password — ask the DJ.",
+  lpw: "PASSWORD", go: "ENTER", title: "Song Requests",
+  hint: "Type at least 2 letters to search.", none: "No matches.",
+  fail: "Search failed — is the DJ app running?", req: "REQUEST",
+  up: "You're up!", inrot: "in the rotation", more: "more",
+  nameFirst: "Enter your name first!", sent: "Request sent!",
+  failed: "Request failed", noReach: "Couldn't reach the DJ app.",
+  wrongPw: "Wrong password — try again.",
+};
+if (FR) {
+  Object.assign(S, {
+    sub: "Cherchez une chanson, touchez DEMANDER — le DJ vous ajoute à la rotation.",
+    lname: "VOTRE NOM", namePh: "Qui chante ?", lfind: "TROUVER UNE CHANSON",
+    qPh: "Titre ou artiste…",
+    gsub: "Cette soirée demande un mot de passe — demandez au DJ.",
+    lpw: "MOT DE PASSE", go: "ENTRER", title: "Demandes de chansons",
+    hint: "Tapez au moins 2 lettres pour chercher.", none: "Aucun résultat.",
+    fail: "Recherche impossible — le DJ est-il en ligne ?", req: "DEMANDER",
+    up: "C'est à vous !", inrot: "dans la rotation", more: "autres",
+    nameFirst: "Entrez d'abord votre nom !", sent: "Demande envoyée !",
+    failed: "Échec de la demande", noReach: "Impossible de joindre le DJ.",
+    wrongPw: "Mauvais mot de passe — réessayez.",
+  });
+  document.documentElement.lang = "fr";
+  document.title = S.title;
+  for (const id of ["sub", "lname", "lfind", "gsub", "lpw", "go"])
+    $(id).textContent = S[id];
+  $("name").placeholder = S.namePh;
+  $("q").placeholder = S.qPh;
+  $("list").innerHTML = '<p class="hint">' + S.hint + '</p>';
+}
 let PW = "";
 try { PW = localStorage.getItem("kdj_pw") || ""; } catch (e) {}
 function gate(show) { $("gate").hidden = !show; if (show) $("pw").focus(); }
@@ -98,9 +135,9 @@ $("go").addEventListener("click", async () => {
       try { localStorage.setItem("kdj_pw", PW); } catch (e) {}
       gate(false);
     } else {
-      $("gerr").textContent = "Wrong password — try again.";
+      $("gerr").textContent = S.wrongPw;
     }
-  } catch (e) { $("gerr").textContent = "Couldn't reach the DJ app."; }
+  } catch (e) { $("gerr").textContent = S.noReach; }
 });
 $("pw").addEventListener("keydown", ev => {
   if (ev.key === "Enter") $("go").click();
@@ -121,10 +158,10 @@ async function myStatus() {
     if (!rows.length) { el.style.display = "none"; return; }
     const r = rows[0];
     el.className = r.s ? "up" : "";
-    el.textContent = r.s ? "\ud83c\udfa4 You're up! \u2014 " + r.t
-                         : "#" + r.p + " in the rotation \u2014 " + r.t +
-                           (rows.length > 1 ? "  (+" + (rows.length - 1) +
-                                              " more)" : "");
+    el.textContent = r.s ? "🎤 " + S.up + " — " + r.t
+                         : "#" + r.p + " " + S.inrot + " — " + r.t +
+                           (rows.length > 1 ? "  (+" + (rows.length - 1) + " " +
+                                              S.more + ")" : "");
     el.style.display = "block";
   } catch (e) { el.style.display = "none"; }
 }
@@ -153,7 +190,7 @@ $("q").addEventListener("input", () => {
 async function search() {
   const q = $("q").value.trim();
   if (q.length < 2) {
-    $("list").innerHTML = '<p class="hint">Type at least 2 letters to search.</p>';
+    $("list").innerHTML = '<p class="hint">' + S.hint + '</p>';
     return;
   }
   try {
@@ -162,23 +199,23 @@ async function search() {
     if (rs.status === 401) { gate(true); return; }
     const rows = await rs.json();
     if (!rows.length) {
-      $("list").innerHTML = '<p class="hint">No matches.</p>';
+      $("list").innerHTML = '<p class="hint">' + S.none + '</p>';
       return;
     }
     $("list").innerHTML = rows.map(r =>
       '<div class="row"><div class="meta"><div class="t">' + esc(r.t) +
       '</div><div class="a">' + esc(r.a || "—") +
       (r.d > 0 ? " · " + fmt(r.d) : "") +
-      '</div></div><button data-id="' + r.id + '">REQUEST</button></div>').join("");
+      '</div></div><button data-id="' + r.id + '">' + S.req + '</button></div>').join("");
   } catch (e) {
-    $("list").innerHTML = '<p class="hint">Search failed — is the DJ app running?</p>';
+    $("list").innerHTML = '<p class="hint">' + S.fail + '</p>';
   }
 }
 $("list").addEventListener("click", async ev => {
   const b = ev.target.closest("button");
   if (!b) return;
   const name = $("name").value.trim();
-  if (!name) { toast("Enter your name first!", true); $("name").focus(); return; }
+  if (!name) { toast(S.nameFirst, true); $("name").focus(); return; }
   b.disabled = true;
   try {
     const rs = await fetch("/api/request", {
@@ -187,193 +224,11 @@ $("list").addEventListener("click", async ev => {
     });
     if (rs.status === 401) { gate(true); b.disabled = false; return; }
     const j = await rs.json();
-    toast(j.msg || (rs.ok ? "Request sent!" : "Request failed"), !rs.ok);
+    toast(j.msg || (rs.ok ? S.sent : S.failed), !rs.ok);
     if (!rs.ok) b.disabled = false;
     if (rs.ok) setTimeout(myStatus, 4000);
   } catch (e) {
-    toast("Couldn't reach the DJ app.", true);
-    b.disabled = false;
-  }
-});
-</script></body></html>)HTML";
-
-static const char kPageFr[] = R"HTML(<!doctype html>
-<html lang="fr"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Demandes de chansons</title>
-<style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: #0a0a0c; color: #ececef;
-         font: 16px/1.4 system-ui, "Segoe UI", sans-serif;
-         padding: max(12px, env(safe-area-inset-top)) 14px 24px; }
-  h1 { font-size: 19px; letter-spacing: .12em; color: #d22c36; margin: 6px 0 2px; }
-  .sub { color: #94949d; font-size: 12px; margin: 0 0 14px; }
-  label { display: block; color: #94949d; font-size: 11px; letter-spacing: .08em;
-          margin: 12px 0 4px; }
-  input { width: 100%; padding: 12px; font-size: 16px; color: #ececef;
-          background: #141416; border: 1px solid #2a2a2f; border-radius: 9px;
-          outline: none; }
-  input:focus { border-color: #d22c36; }
-  #list { margin-top: 12px; }
-  .row { display: flex; align-items: center; gap: 10px; padding: 10px 4px;
-         border-bottom: 1px solid #1c1c20; }
-  .meta { flex: 1; min-width: 0; }
-  .t { font-weight: 600; white-space: nowrap; overflow: hidden;
-       text-overflow: ellipsis; }
-  .a { color: #94949d; font-size: 13px; white-space: nowrap; overflow: hidden;
-       text-overflow: ellipsis; }
-  button { flex: none; padding: 10px 14px; font-size: 13px; font-weight: 700;
-           letter-spacing: .06em; color: #fff; background: #d22c36;
-           border: 0; border-radius: 9px; }
-  button:disabled { background: #2a2a2f; color: #94949d; }
-  #toast { position: fixed; left: 14px; right: 14px;
-           bottom: max(16px, env(safe-area-inset-bottom)); padding: 13px;
-           text-align: center; font-weight: 600; border-radius: 10px;
-           background: #14532d; color: #b9f6ca; opacity: 0;
-           transition: opacity .25s; pointer-events: none; }
-  #toast.err { background: #58151c; color: #ffb4ab; }
-  #toast.show { opacity: 1; }
-  .hint { color: #94949d; font-size: 13px; text-align: center; margin-top: 26px; }
-  #mystat { display: none; margin: 12px 0 2px; padding: 12px; border-radius: 10px;
-            background: #1a2f1f; border: 1px solid #2e5d3a; color: #b9f6ca;
-            font-weight: 600; }
-  #mystat.up { background: #3a1114; border-color: #d22c36; color: #ffd2d6; }
-  #gate { position: fixed; inset: 0; z-index: 9; background: #0a0a0c;
-          padding: 15vh 24px 0; }
-  #gate button { width: 100%; margin-top: 14px; padding: 13px; }
-  #gate[hidden] { display: none; }
-</style></head><body>
-<h1>KARAOKE DJ</h1>
-<p class="sub">Cherchez une chanson, touchez DEMANDER — le DJ vous ajoute à la rotation.</p>
-<label>VOTRE NOM</label>
-<input id="name" maxlength="40" placeholder="Qui chante ?" autocomplete="off">
-<div id="mystat"></div>
-<label>TROUVER UNE CHANSON</label>
-<input id="q" placeholder="Titre ou artiste…" autocomplete="off">
-<div id="list"><p class="hint">Tapez au moins 2 lettres pour chercher.</p></div>
-<div id="toast"></div>
-<div id="gate" hidden>
-  <h1>KARAOKE DJ</h1>
-  <p class="sub">Cette soirée demande un mot de passe — demandez au DJ.</p>
-  <label>MOT DE PASSE</label>
-  <input id="pw" type="password" autocomplete="off">
-  <button id="go">ENTRER</button>
-  <p id="gerr" class="hint"></p>
-</div>
-<script>
-"use strict";
-const $ = id => document.getElementById(id);
-let PW = "";
-try { PW = localStorage.getItem("kdj_pw") || ""; } catch (e) {}
-function gate(show) { $("gate").hidden = !show; if (show) $("pw").focus(); }
-async function ping() {
-  try { gate(!(await fetch("/api/ping?pw=" + encodeURIComponent(PW))).ok); }
-  catch (e) {}
-}
-ping();
-$("go").addEventListener("click", async () => {
-  PW = $("pw").value;
-  try {
-    if ((await fetch("/api/ping?pw=" + encodeURIComponent(PW))).ok) {
-      try { localStorage.setItem("kdj_pw", PW); } catch (e) {}
-      gate(false);
-    } else {
-      $("gerr").textContent = "Mauvais mot de passe — réessayez.";
-    }
-  } catch (e) { $("gerr").textContent = "Impossible de joindre le DJ."; }
-});
-$("pw").addEventListener("keydown", ev => {
-  if (ev.key === "Enter") $("go").click();
-});
-try { $("name").value = localStorage.getItem("kdj_name") || ""; } catch (e) {}
-$("name").addEventListener("input", () => {
-  try { localStorage.setItem("kdj_name", $("name").value); } catch (e) {}
-});
-async function myStatus() {
-  const name = $("name").value.trim();
-  const el = $("mystat");
-  if (!name) { el.style.display = "none"; return; }
-  try {
-    const rs = await fetch("/api/mystatus?singer=" + encodeURIComponent(name) +
-                           "&pw=" + encodeURIComponent(PW));
-    if (!rs.ok) { el.style.display = "none"; return; }
-    const rows = await rs.json();
-    if (!rows.length) { el.style.display = "none"; return; }
-    const r = rows[0];
-    el.className = r.s ? "up" : "";
-    el.textContent = r.s ? "\ud83c\udfa4 C'est \u00e0 vous ! \u2014 " + r.t
-                         : "#" + r.p + " dans la rotation \u2014 " + r.t +
-                           (rows.length > 1 ? "  (+" + (rows.length - 1) +
-                                              " autres)" : "");
-    el.style.display = "block";
-  } catch (e) { el.style.display = "none"; }
-}
-myStatus();
-setInterval(myStatus, 15000);
-let timer = 0, toastTimer = 0;
-function toast(msg, err) {
-  const t = $("toast");
-  t.textContent = msg;
-  t.className = (err ? "err " : "") + "show";
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.className = err ? "err" : ""; }, 2600);
-}
-function esc(s) {
-  return s.replace(/[&<>"]/g, c =>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-}
-function fmt(ms) {
-  const s = Math.round(ms / 1000);
-  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-}
-$("q").addEventListener("input", () => {
-  clearTimeout(timer);
-  timer = setTimeout(search, 250);
-});
-async function search() {
-  const q = $("q").value.trim();
-  if (q.length < 2) {
-    $("list").innerHTML = '<p class="hint">Tapez au moins 2 lettres pour chercher.</p>';
-    return;
-  }
-  try {
-    const rs = await fetch("/api/search?q=" + encodeURIComponent(q) +
-                           "&pw=" + encodeURIComponent(PW));
-    if (rs.status === 401) { gate(true); return; }
-    const rows = await rs.json();
-    if (!rows.length) {
-      $("list").innerHTML = '<p class="hint">Aucun résultat.</p>';
-      return;
-    }
-    $("list").innerHTML = rows.map(r =>
-      '<div class="row"><div class="meta"><div class="t">' + esc(r.t) +
-      '</div><div class="a">' + esc(r.a || "—") +
-      (r.d > 0 ? " · " + fmt(r.d) : "") +
-      '</div></div><button data-id="' + r.id + '">DEMANDER</button></div>').join("");
-  } catch (e) {
-    $("list").innerHTML = '<p class="hint">Recherche impossible — le DJ est-il en ligne ?</p>';
-  }
-}
-$("list").addEventListener("click", async ev => {
-  const b = ev.target.closest("button");
-  if (!b) return;
-  const name = $("name").value.trim();
-  if (!name) { toast("Entrez d'abord votre nom !", true); $("name").focus(); return; }
-  b.disabled = true;
-  try {
-    const rs = await fetch("/api/request", {
-      method: "POST",
-      body: new URLSearchParams({ id: b.dataset.id, singer: name, pw: PW }),
-    });
-    if (rs.status === 401) { gate(true); b.disabled = false; return; }
-    const j = await rs.json();
-    toast(j.msg || (rs.ok ? "Demande envoyée !" : "Échec de la demande"), !rs.ok);
-    if (!rs.ok) b.disabled = false;
-    if (rs.ok) setTimeout(myStatus, 4000);
-  } catch (e) {
-    toast("Impossible de joindre le DJ.", true);
+    toast(S.noReach, true);
     b.disabled = false;
   }
 });
@@ -451,7 +306,12 @@ bool RequestServer::start(const std::wstring& dbPath, int firstPort) {
     srv_->new_task_queue = [] { return new httplib::ThreadPool(1); };
 
     srv_->Get("/", [this](const httplib::Request&, httplib::Response& rs) {
-        rs.set_content(lang_.load() ? kPageFr : kPage, "text/html; charset=utf-8");
+        std::string page = kPage;
+        if (lang_.load()) {
+            const size_t p = page.find("const FR=0");
+            if (p != std::string::npos) page[p + 9] = '1';
+        }
+        rs.set_content(std::move(page), "text/html; charset=utf-8");
     });
 
     const auto authed = [this](const httplib::Request& rq) {
