@@ -159,14 +159,22 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                 moveSingerRow(a, a.dragSinger, (std::min)(idx, nAct - 1));
             }
         } else if (a.dragging && a.dragItems.size() > 1) {
-            // Multi-drag: dropping on the queue OR a deck queues them all.
+            // Multi-drag: dropping on the queue OR a deck queues them all —
+            // on the open queue list, at the drop position.
             if (hit(a.rcDeck[0], ui.in.mx, ui.in.my) ||
                 hit(a.rcDeck[1], ui.in.mx, ui.in.my) ||
                 hit(a.rcQueue, ui.in.mx, ui.in.my)) {
+                int at = int(a.queue.size());
+                // Only the list rows position the drop (where the indicator
+                // draws); the header strip above still appends.
+                if (a.queueOpen && hit(a.rcQueueList, ui.in.mx, ui.in.my))
+                    at = std::clamp(int((ui.in.my - a.rcQueueList.top) / 26 +
+                                        a.queueScroll + 0.5f),
+                                    0, int(a.queue.size()));
                 size_t qn = 0, qskip = 0;
                 for (const Match& m : a.dragItems) {
                     if (pathOffline(m.path, a.driveMask)) { ++qskip; continue; }
-                    a.queue.push_back(m);
+                    a.queue.insert(a.queue.begin() + at++, m);
                     ++qn;
                 }
                 a.status = qskip ? L"queued " + std::to_wstring(qn) +
@@ -193,7 +201,17 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                     a.queue.insert(a.queue.begin() + idx, a.dragItem);
                     a.selQueue = idx;
                 } else if (src < 0 && ensurePlayable(a, a.dragItem)) {
-                    a.queue.push_back(a.dragItem);
+                    // From the browser: insert where it was dropped — but
+                    // only list rows position it (header/closed drawer
+                    // keep the old append).
+                    const int idx =
+                        a.queueOpen && hit(a.rcQueueList, ui.in.mx, ui.in.my)
+                            ? std::clamp(int((ui.in.my - a.rcQueueList.top) / 26 +
+                                             a.queueScroll + 0.5f),
+                                         0, int(a.queue.size()))
+                            : int(a.queue.size());
+                    a.queue.insert(a.queue.begin() + idx, a.dragItem);
+                    a.selQueue = idx;
                     a.status = L"queued: " + a.dragItem.label;
                 }
             } else if (a.dragFromList >= 0 && a.nav == NavMode::Playlist &&
@@ -269,9 +287,12 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                 ui.text(rc(fb.left + 8, fb.top, fb.right - fb.left - 16, 26),
                         a.tagField[k], 12, cText, 0, false);
                 if (a.tagFocus == k && caretOn()) {
-                    const float cx2 =
+                    // Clamp: text longer than the box is clipped, so the
+                    // caret must not wander over the neighbouring fields.
+                    const float cx2 = (std::min)(
+                        fb.right - 6.f,
                         fb.left + 8 + ui.caretX(a.tagField[k], 12,
-                                                size_t((std::max)(a.tagCaret, 0)));
+                                                size_t((std::max)(a.tagCaret, 0))));
                     ui.line(cx2, fb.top + 5, cx2, fb.bottom - 5, cText, 1.f);
                 }
                 if (ui.in.pressed && hit(fb, ui.in.pressX, ui.in.pressY)) {
@@ -363,7 +384,10 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                 commitPrompt(a);
         } else {
             ui.text(rc(p.left + 16, p.top + 27, pw - 32, 16),
-                    singer ? a.rotAddPending.label
+                    singer ? (a.rotAddPending.size() == 1
+                                  ? a.rotAddPending[0].label
+                                  : std::to_wstring(a.rotAddPending.size()) +
+                                        L" tracks")
                            : L"fill it by right-click → Add to playlist, or drag rows in",
                     12, cDim, 0, false);
             const D2D1_RECT_F box = rc(p.left + 16, p.top + 50, pw - 32, 28);

@@ -358,7 +358,8 @@ void commitPrompt(App& a) {
     }
     if (a.prompt == App::Prompt::NewSinger) {
         if (!a.promptText.empty()) a.singerName = a.promptText;
-        addToRotationAs(a, a.rotAddPending, a.promptText);
+        for (const Match& m : a.rotAddPending)
+            addToRotationAs(a, m, a.promptText);
     } else if (a.prompt == App::Prompt::NewPlaylist && !a.promptText.empty()) {
         Db::Stmt q;
         a.db.prepare(q, "INSERT OR IGNORE INTO playlist(name,created_at,updated_at) "

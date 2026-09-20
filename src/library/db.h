@@ -55,6 +55,7 @@ public:
         busy_ = false;
         return b;
     }
+    void noteBusy() { busy_ = true; }
 
 private:
     sqlite3* db_ = nullptr;

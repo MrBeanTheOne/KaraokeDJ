@@ -366,14 +366,13 @@ void handleMenu(App& a, HWND hwnd) {
         const Match m = a.results[req.index];
         // List actions (queue/playlist/rotation) take the whole multi-selection
         // when the clicked row is part of it; single-track actions keep m.
+        std::vector<int> rows{req.index};
+        if (a.selRows.size() > 1 && a.selRows.count(req.index))
+            rows.assign(a.selRows.begin(), a.selRows.end());
         std::vector<Match> picked;
-        if (a.selRows.size() > 1 && a.selRows.count(req.index)) {
-            for (int k : a.selRows)
-                if (k >= 0 && k < int(a.results.size()))
-                    picked.push_back(a.results[k]);
-        } else {
-            picked.push_back(m);
-        }
+        for (int k : rows)
+            if (k >= 0 && k < int(a.results.size()))
+                picked.push_back(a.results[k]);
         std::vector<std::wstring> items = {
             L"Mix now", L"Add to queue", L"Play next (queue front)",
             L"Edit tags…",
@@ -384,8 +383,16 @@ void handleMenu(App& a, HWND hwnd) {
         const int sel = showTrackMenu(a, hwnd, req.x, req.y, items, 4, singers);
         if (sel == 0) playNow(a, m);
         else if (sel == 1) {
-            for (const Match& pm : picked)
-                if (ensurePlayable(a, pm)) a.queue.push_back(pm);
+            size_t qn = 0, qskip = 0;
+            for (const Match& pm : picked) {
+                if (ensurePlayable(a, pm)) { a.queue.push_back(pm); ++qn; }
+                else ++qskip;
+            }
+            if (picked.size() > 1) // count like the drag path; a single add
+                a.status =         // keeps ensurePlayable's own message
+                    L"queued " + std::to_wstring(qn) +
+                    (qskip ? L", skipped " + std::to_wstring(qskip) : L"") +
+                    L" tracks";
         }
         else if (sel == 2) { // play next: displace an auto-cued deck if needed
             const int act = a.mixer.activeDeck.load();
@@ -424,29 +431,29 @@ void handleMenu(App& a, HWND hwnd) {
             }
         }
         else if (sel == 5 && a.nav == NavMode::Playlist) {
-            std::vector<int> rows; // selected view rows, same rule as `picked`
-            if (a.selRows.size() > 1 && a.selRows.count(req.index))
-                rows.assign(a.selRows.begin(), a.selRows.end());
-            else
-                rows.push_back(req.index);
-            int n = 0, failed = 0;
+            // One transaction: one lock wait instead of one per row, and a
+            // busy database removes nothing rather than a random subset.
+            // run(), not step(): a DELETE blocked by a busy database must be
+            // reported, not silently dropped ("the rows came back").
+            bool ok = a.db.exec("BEGIN");
+            int n = 0;
             for (int k : rows) {
+                if (!ok) break;
                 if (k < 0 || k >= int(a.resultsPlItem.size())) continue;
                 Db::Stmt q; // by playlist_item.id: a duplicate's twin survives
                 a.db.prepare(q, "DELETE FROM playlist_item WHERE id=?1");
                 q.bind(1, a.resultsPlItem[k]);
-                // run(), not step(): a DELETE blocked by a busy database (e.g.
-                // a background scan holding the write lock) must be reported,
-                // not silently dropped — the rows would "come back" on reload.
-                q.run() ? ++n : ++failed;
+                ok = q.run();
+                ++n;
             }
+            if (ok) ok = a.db.exec("COMMIT");
+            if (!ok) a.db.exec("ROLLBACK");
             a.selRows.clear();
             a.selLib = -1;
             a.searchDirty = true;
-            a.status = failed ? L"database busy — " + std::to_wstring(failed) +
-                                    L" not removed, try again"
-                              : L"removed " + std::to_wstring(n) + L" from " +
-                                    a.navPlaylistName;
+            a.status = ok ? L"removed " + std::to_wstring(n) + L" from " +
+                                a.navPlaylistName
+                          : L"database busy — nothing removed, try again";
         }
         else if (sel >= 2000 && sel - 2000 < int(a.playlists.size())) {
             for (const Match& pm : picked)
@@ -463,29 +470,47 @@ void handleMenu(App& a, HWND hwnd) {
         }
         else if (sel == 1099) {
             a.prompt = App::Prompt::NewSinger;
-            a.rotAddPending = m;
-            a.promptText.clear();
+            a.rotAddPending = picked; // the whole selection, like the
+            a.promptText.clear();     // existing-singer branch above
         }
     } else if (req.kind == MenuReq::QueueRow && req.index >= 0 &&
                req.index < int(a.queue.size())) {
         const Match m = a.queue[req.index];
         const auto singers = rotationSingers(a);
+        // Same rule as the browser: list actions take the multi-selection
+        // when the clicked row is inside it; Play now keeps the clicked row.
+        std::vector<int> qrows{req.index};
+        if (a.selQRows.size() > 1 && a.selQRows.count(req.index))
+            qrows.assign(a.selQRows.begin(), a.selQRows.end());
+        std::vector<Match> picked;
+        for (int k : qrows)
+            if (k >= 0 && k < int(a.queue.size())) picked.push_back(a.queue[k]);
         const int sel = showTrackMenu(a, hwnd, req.x, req.y,
                                       {L"Play now", L"Remove"}, 2, singers);
         if (sel == 0) {
             a.queue.erase(a.queue.begin() + req.index);
+            a.selQRows.clear();
             playNow(a, m);
-        } else if (sel == 1) {
-            a.queue.erase(a.queue.begin() + req.index);
+        } else if (sel == 1) { // whole selection, back to front so the
+            for (auto it = qrows.rbegin(); it != qrows.rend(); ++it) // indices
+                if (*it >= 0 && *it < int(a.queue.size()))           // hold
+                    a.queue.erase(a.queue.begin() + *it);
+            a.selQRows.clear();
+            a.selQueue = (std::min)(a.selQueue, int(a.queue.size()) - 1);
         } else if (sel >= 2000 && sel - 2000 < int(a.playlists.size())) {
-            addToPlaylistDb(a, a.playlists[sel - 2000].second, m);
-            a.status = L"added to " + a.playlists[sel - 2000].first;
+            for (const Match& pm : picked)
+                addToPlaylistDb(a, a.playlists[sel - 2000].second, pm);
+            a.status = L"added to " + a.playlists[sel - 2000].first +
+                       (picked.size() > 1
+                            ? L" (" + std::to_wstring(picked.size()) + L")"
+                            : L"");
         } else if (sel >= 1000 && sel - 1000 < int(singers.size())) {
             a.singerName = singers[sel - 1000];
-            addToRotationAs(a, m, a.singerName); // stays in the queue too
+            for (const Match& pm : picked) // stays in the queue too
+                addToRotationAs(a, pm, a.singerName);
         } else if (sel == 1099) {
             a.prompt = App::Prompt::NewSinger;
-            a.rotAddPending = m;
+            a.rotAddPending = picked;
             a.promptText.clear();
         }
     } else if (req.kind == MenuReq::DeckWave && req.index >= 0 && req.index < 2) {

@@ -71,10 +71,11 @@ Settings) and points you at the download when one exists.
 - Sortable, resizable, reorderable columns (title, artist, genre, year, BPM,
   time, **key**) — right-click the header to choose what shows.
 - Playlists with drag-reorder, played-tonight dots, and **multi-select
-  everywhere**: shift/ctrl-click several tracks, then drag or right-click to
-  queue, playlist or rotation them all at once — or remove them from a
-  playlist in one go (duplicates are kept apart: only the copies you selected
-  go).
+  everywhere** — browser and queue: shift/ctrl-click several tracks, then
+  drag or right-click to queue, playlist or rotation them all at once, remove
+  them from a playlist or the queue in one go (duplicates are kept apart:
+  only the copies you selected go). Dragging into the queue drops at the
+  exact spot the indicator shows.
 - **Tag editor**: right-click any track to fix artist/title/genre/year — in
   the library only, or written straight into the file's real tags. Real
   cursor editing: click anywhere in a field, arrow keys move, up/down hop

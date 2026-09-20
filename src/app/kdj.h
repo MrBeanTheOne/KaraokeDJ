@@ -159,6 +159,7 @@ struct App {
     int64_t singingItemId = -1;
     std::deque<Match> queue;
     int selLib = -1, selQueue = -1;
+    std::set<int> selQRows; // queue drawer multi-selection (shift/ctrl click)
     std::set<int> selRows;    // multi-selection (shift/ctrl click) in the browser
     int selCollapse = -1; // plain click inside the selection: collapse to this
                           // row on release, unless the press became a drag
@@ -303,7 +304,7 @@ struct App {
         ClearHistory, ClearQueue, QuitApp
     };
     Prompt prompt = Prompt::None;
-    Match rotAddPending; // NewSinger: the track being added
+    std::vector<Match> rotAddPending; // NewSinger: the track(s) being added
     // Tag editor (browser right-click): edits library metadata; optionally
     // writes the tags into the file itself via its shell property handler.
     Match tagEditItem;

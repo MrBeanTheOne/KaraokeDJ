@@ -487,7 +487,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         }
         if (a.prompt == App::Prompt::None && g_pending.del && a.selQueue >= 0 &&
             a.selQueue < int(a.queue.size())) {
-            a.queue.erase(a.queue.begin() + a.selQueue);
+            if (a.selQRows.size() > 1) { // multi-selection: remove them all,
+                for (auto it = a.selQRows.rbegin(); // back to front so the
+                     it != a.selQRows.rend(); ++it) // indices stay valid
+                    if (*it >= 0 && *it < int(a.queue.size()))
+                        a.queue.erase(a.queue.begin() + *it);
+            } else {
+                a.queue.erase(a.queue.begin() + a.selQueue);
+            }
+            a.selQRows.clear();
             a.selQueue = (std::min)(a.selQueue, int(a.queue.size()) - 1);
         }
         if (a.prompt == App::Prompt::None && g_pending.pgdn) { // skip: cued deck, else queue
@@ -737,10 +745,16 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                     }
                     a.cpuPrev100ns = busy;
                 }
-                PROCESS_MEMORY_COUNTERS pmc{};
+                // PrivateUsage (commit), not WorkingSetSize: the working set
+                // counts shared DLL/driver/mapped-db pages, which read ~100 MB
+                // above Task Manager's default column and hide real growth.
+                PROCESS_MEMORY_COUNTERS_EX pmc{};
                 pmc.cb = sizeof(pmc);
-                if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
-                    a.ramMb = int(pmc.WorkingSetSize >> 20);
+                if (GetProcessMemoryInfo(
+                        GetCurrentProcess(),
+                        reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+                        sizeof(pmc)))
+                    a.ramMb = int(pmc.PrivateUsage >> 20);
                 a.cpuAt = pnow;
             }
         }

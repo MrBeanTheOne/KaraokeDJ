@@ -395,12 +395,12 @@ void VideoWindow::drawIdle() {
             rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
                            D2D1::RectF(qx - 80, qy + qw + 6, qx + qw + 80,
                                        qy + qw + 6 + szQ * 1.5f),
-                           brush);
+                           brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
             brush->SetColor(D2D1::ColorF(0x9BA3AD));
             rt_->DrawTextW(qrUrl_.c_str(), UINT32(qrUrl_.size()), qf,
                            D2D1::RectF(qx - 80, qy + qw + 6 + szQ * 1.6f,
                                        qx + qw + 80, qy + qw + 6 + szQ * 3.2f),
-                           brush);
+                           brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
             qf->Release();
         }
     }

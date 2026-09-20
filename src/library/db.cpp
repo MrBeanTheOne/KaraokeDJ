@@ -153,10 +153,7 @@ int64_t Db::lastId() { return db_ ? sqlite3_last_insert_rowid(db_) : 0; }
 bool Db::prepare(Stmt& st, const char* sql) {
     if (st.s) { sqlite3_finalize(st.s); st.s = nullptr; }
     st.owner = this;
-    if (!db_) return false;
-    const int rc = sqlite3_prepare_v2(db_, sql, -1, &st.s, nullptr);
-    if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) busy_ = true;
-    return rc == SQLITE_OK;
+    return db_ && sqlite3_prepare_v2(db_, sql, -1, &st.s, nullptr) == SQLITE_OK;
 }
 
 Db::Stmt::~Stmt() {
@@ -178,15 +175,23 @@ Db::Stmt& Db::Stmt::bindNull(int idx) {
     return *this;
 }
 
+// Only a WRITE that hits the busy timeout is a lost change worth warning
+// about — a timed-out SELECT loses nothing, so it must not set the flag.
+static void flagBusy(Db* owner, sqlite3_stmt* s, int rc) {
+    if ((rc == SQLITE_BUSY || rc == SQLITE_LOCKED) && owner && s &&
+        !sqlite3_stmt_readonly(s))
+        owner->noteBusy();
+}
+
 bool Db::Stmt::step() {
     const int rc = sqlite3_step(s);
-    if ((rc == SQLITE_BUSY || rc == SQLITE_LOCKED) && owner) owner->busy_ = true;
+    flagBusy(owner, s, rc);
     return rc == SQLITE_ROW;
 }
 
 bool Db::Stmt::run() {
     const int rc = sqlite3_step(s);
-    if ((rc == SQLITE_BUSY || rc == SQLITE_LOCKED) && owner) owner->busy_ = true;
+    flagBusy(owner, s, rc);
     return rc == SQLITE_DONE || rc == SQLITE_ROW;
 }
 

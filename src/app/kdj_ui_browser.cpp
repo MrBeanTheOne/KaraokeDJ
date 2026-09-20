@@ -609,18 +609,30 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
         if (y + 26 < ql.top || y > ql.bottom) continue;
         const D2D1_RECT_F row = rc(ql.left, y, ql.right - ql.left, 24);
         const bool over = hit(row, ui.in.mx, ui.in.my);
-        if (int(i) == a.selQueue) ui.rect(row, cSel, 4);
+        if (int(i) == a.selQueue || a.selQRows.count(int(i)))
+            ui.rect(row, cSel, 4);
         else if (over) ui.rect(row, cHover, 4);
         else if (i & 1) ui.rect(row, col(0x1A1B1F), 4); // zebra stripe
         if (ui.in.pressed && hit(row, ui.in.pressX, ui.in.pressY) &&
             ui.in.pressX < ql.right - 12) {
-            a.selQueue = int(i);
-            a.dragArmed = true; // reorder by drag, or drop on a deck to cue
-            a.dragX0 = ui.in.pressX;
-            a.dragY0 = ui.in.pressY;
-            a.dragItem = a.queue[i];
-            a.dragFromQueue = int(i);
-            a.dragFromList = -1;
+            if (ui.in.shift && a.selQueue >= 0) { // range from the anchor
+                a.selQRows.clear();
+                for (int k = (std::min)(a.selQueue, int(i));
+                     k <= (std::max)(a.selQueue, int(i)); ++k)
+                    a.selQRows.insert(k);
+            } else if (ui.in.ctrl) {
+                if (!a.selQRows.erase(int(i))) a.selQRows.insert(int(i));
+                a.selQueue = int(i);
+            } else { // plain click: single row (reorder drag stays single)
+                a.selQueue = int(i);
+                a.selQRows.clear();
+                a.dragArmed = true; // reorder by drag, or drop on a deck
+                a.dragX0 = ui.in.pressX;
+                a.dragY0 = ui.in.pressY;
+                a.dragItem = a.queue[i];
+                a.dragFromQueue = int(i);
+                a.dragFromList = -1;
+            }
         }
         if (ui.in.rpressed && hit(row, ui.in.rX, ui.in.rY)) {
             a.selQueue = int(i);
@@ -629,6 +641,7 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
         if (ui.in.dblclick && hit(row, ui.in.dblX, ui.in.dblY)) {
             const Match m = a.queue[i];
             a.queue.erase(a.queue.begin() + i);
+            a.selQRows.clear();
             playNow(a, m);
             break;
         }

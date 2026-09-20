@@ -139,6 +139,9 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
 }
 
 void saveSettings(App& a, UINT winW, UINT winH) {
+    // One transaction: this runs every 5 s on the engine tick, and ~30
+    // autocommits could each wait out the busy timeout during an import.
+    a.db.exec("BEGIN");
     char b[32];
     snprintf(b, 32, "%.1f", a.fadeSec);
     setSetting(a.db, "fade_sec", b);
@@ -198,6 +201,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
         setSetting(a.db, "win_w", std::to_string(winW));
         setSetting(a.db, "win_h", std::to_string(winH));
     }
+    if (!a.db.exec("COMMIT")) a.db.exec("ROLLBACK");
 }
 
 // -------------------------------------------------------------- data loading
