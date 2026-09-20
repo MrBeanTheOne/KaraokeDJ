@@ -23,7 +23,11 @@ struct VideoFrame {
 // mutex + deque is fine here (the audio path stays lock-free).
 class MFVideoDecoder {
 public:
-    bool open(const std::wstring& path); // false if no decodable video stream
+    // Async: returns immediately, the worker thread does the (100 ms+) source
+    // resolution and codec setup so deck loads never stall the UI. A file
+    // with no decodable video stream shows up as failed() shortly after.
+    bool open(const std::wstring& path);
+    bool failed() const { return state_.load(std::memory_order_acquire) == 2; }
     void close();
     ~MFVideoDecoder(); // close() + releases the shared D3D decode device
 
@@ -40,9 +44,12 @@ public:
 
 private:
     void workerMain();
+    bool openReader(); // worker thread: resolve source, negotiate BGRA
 
     void ensureD3D(); // GPU decode device, created once, kept across opens
 
+    std::wstring path_;
+    std::atomic<int> state_{0}; // 0 opening, 1 decoding, 2 failed
     IMFSourceReader* reader_ = nullptr;
     IMFDXGIDeviceManager* dxgiMgr_ = nullptr;
     ID3D11Device* d3d_ = nullptr;

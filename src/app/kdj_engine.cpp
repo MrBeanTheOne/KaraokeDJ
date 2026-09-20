@@ -385,6 +385,9 @@ void presentVideo(App& a) {
     if (a.fullOut) a.fullOut->setFitMode(a.videoFit); // covers every create path
     VideoWindow* wins[1] = {a.fullOut.get()};
     for (int d = 0; d < 2; ++d) {
+        // Video opens are async now: demote once the worker knows the file
+        // has no decodable video stream (plain audio, broken container).
+        if (a.hasVid[d] && a.vdec[d].failed()) a.hasVid[d] = false;
         const int64_t clk = int64_t(a.decks[d]->framesPlayed.load() * 10000000ull / kRate);
         bool fresh = false;
         if (a.hasVid[d]) {

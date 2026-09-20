@@ -142,6 +142,7 @@ int wmain(int argc, wchar_t** argv) {
             if (const int k = w->popKey()) handleKey(k);
         const int64_t off = int64_t(avOffsetMs * 10000.0);
         for (int d = 0; d < 2; ++d) {
+            if (hasVid[d] && vdec[d].failed()) hasVid[d] = false; // async open
             const int64_t clk =
                 int64_t(decks[d]->framesPlayed.load() * 10000000ull / kRate) + off;
             if (hasVid[d]) {

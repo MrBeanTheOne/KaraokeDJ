@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(karaoke-dj VERSION 1.1.20 LANGUAGES C CXX)
+project(karaoke-dj VERSION 1.1.21 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

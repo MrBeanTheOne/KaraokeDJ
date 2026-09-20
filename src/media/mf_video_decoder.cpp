@@ -45,6 +45,20 @@ void MFVideoDecoder::ensureD3D() {
 
 bool MFVideoDecoder::open(const std::wstring& path) {
     close();
+    path_ = path;
+    state_.store(0, std::memory_order_release);
+    quit_.store(false);
+    eos_.store(false);
+    dropped_.store(0);
+    pendingSeekHns_.store(-1);
+    worker_ = std::thread(&MFVideoDecoder::workerMain, this);
+    return true; // optimistic — callers demote via failed() once known
+}
+
+// Worker thread only: everything here can take 100 ms+ (source resolution,
+// codec MFT setup, hardware decoder init) and must never run on the UI
+// thread. The reader is built into a local until it is fully negotiated.
+bool MFVideoDecoder::openReader() {
     ensureD3D();
 
     IMFAttributes* attrs = nullptr;
@@ -56,47 +70,49 @@ bool MFVideoDecoder::open(const std::wstring& path) {
             attrs->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
         }
     }
-    HRESULT hr = MFCreateSourceReaderFromURL(path.c_str(), attrs, &reader_);
+    IMFSourceReader* r = nullptr;
+    HRESULT hr = MFCreateSourceReaderFromURL(path_.c_str(), attrs, &r);
     if (attrs) attrs->Release();
-    if (FAILED(hr)) { reader_ = nullptr; return false; }
+    if (FAILED(hr)) return false;
 
-    reader_->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
-    if (FAILED(reader_->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE))) {
-        close();
+    r->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
+    if (FAILED(r->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE))) {
+        r->Release();
         return false;
     }
 
     IMFMediaType* t = nullptr;
-    if (FAILED(MFCreateMediaType(&t))) { close(); return false; }
+    if (FAILED(MFCreateMediaType(&t))) { r->Release(); return false; }
     t->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
     t->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32); // BGRX in memory = D2D B8G8R8A8
-    hr = reader_->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, t);
+    hr = r->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, t);
     t->Release();
-    if (FAILED(hr)) { close(); return false; }
+    if (FAILED(hr)) { r->Release(); return false; }
 
     IMFMediaType* cur = nullptr;
-    if (FAILED(reader_->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, &cur))) {
-        close();
+    if (FAILED(r->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, &cur))) {
+        r->Release();
         return false;
     }
     UINT32 w = 0, h = 0;
     MFGetAttributeSize(cur, MF_MT_FRAME_SIZE, &w, &h);
     stride_ = int32_t(MFGetAttributeUINT32(cur, MF_MT_DEFAULT_STRIDE, w * 4));
     cur->Release();
-    if (!w || !h) { close(); return false; }
+    if (!w || !h) { r->Release(); return false; }
     w_ = w;
     h_ = h;
-
-    quit_.store(false);
-    eos_.store(false);
-    dropped_.store(0);
-    pendingSeekHns_.store(-1);
-    worker_ = std::thread(&MFVideoDecoder::workerMain, this);
+    reader_ = r;
     return true;
 }
 
 void MFVideoDecoder::workerMain() {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (!openReader()) {
+        state_.store(2, std::memory_order_release);
+        CoUninitialize();
+        return;
+    }
+    state_.store(1, std::memory_order_release);
     while (!quit_.load(std::memory_order_relaxed)) {
         const int64_t sk = pendingSeekHns_.exchange(-1);
         if (sk >= 0) { // reader is only ever touched from this thread
