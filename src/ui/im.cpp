@@ -118,6 +118,34 @@ float Ui::fitSize(const std::wstring& s, float maxW, float base) {
     return (std::max)(8.f, base * maxW / mtr.width - 0.5f);
 }
 
+int Ui::caretFromX(const std::wstring& s, float size, float x) {
+    if (s.empty() || !dw_) return 0;
+    IDWriteTextLayout* tl = nullptr;
+    if (FAILED(dw_->CreateTextLayout(s.c_str(), UINT32(s.size()),
+                                     fmt(size, false, 0), 1e6f, 100.f, &tl)) ||
+        !tl)
+        return int(s.size());
+    BOOL trailing = FALSE, inside = FALSE;
+    DWRITE_HIT_TEST_METRICS m{};
+    tl->HitTestPoint(x, 50.f, &trailing, &inside, &m);
+    tl->Release();
+    return int(m.textPosition) + (trailing ? 1 : 0);
+}
+
+float Ui::caretX(const std::wstring& s, float size, size_t caret) {
+    caret = (std::min)(caret, s.size());
+    if (!dw_ || caret == 0) return 0;
+    IDWriteTextLayout* tl = nullptr;
+    if (FAILED(dw_->CreateTextLayout(s.c_str(), UINT32(caret),
+                                     fmt(size, false, 0), 1e6f, 100.f, &tl)) ||
+        !tl)
+        return 0;
+    DWRITE_TEXT_METRICS m{};
+    tl->GetMetrics(&m);
+    tl->Release();
+    return m.widthIncludingTrailingWhitespace;
+}
+
 // Single PUA character = a Segoe MDL2 Assets system icon (crisp UI glyphs,
 // e.g. repeat E8EE / shuffle E8B1); Ui::text routes those here.
 IDWriteTextFormat* Ui::fmtIcon(float size) {

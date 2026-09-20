@@ -364,14 +364,29 @@ void handleMenu(App& a, HWND hwnd) {
     } else if (req.kind == MenuReq::BrowserRow && req.index >= 0 &&
                req.index < int(a.results.size())) {
         const Match m = a.results[req.index];
-        const std::vector<std::wstring> items = {
+        // List actions (queue/playlist/rotation) take the whole multi-selection
+        // when the clicked row is part of it; single-track actions keep m.
+        std::vector<Match> picked;
+        if (a.selRows.size() > 1 && a.selRows.count(req.index)) {
+            for (int k : a.selRows)
+                if (k >= 0 && k < int(a.results.size()))
+                    picked.push_back(a.results[k]);
+        } else {
+            picked.push_back(m);
+        }
+        std::vector<std::wstring> items = {
             L"Mix now", L"Add to queue", L"Play next (queue front)",
             L"Edit tags…",
             a.showHidden ? L"Restore to search" : L"Exclude from search"};
+        if (a.nav == NavMode::Playlist)
+            items.push_back(L"Remove from playlist");
         const auto singers = rotationSingers(a);
         const int sel = showTrackMenu(a, hwnd, req.x, req.y, items, 4, singers);
         if (sel == 0) playNow(a, m);
-        else if (sel == 1) { if (ensurePlayable(a, m)) a.queue.push_back(m); }
+        else if (sel == 1) {
+            for (const Match& pm : picked)
+                if (ensurePlayable(a, pm)) a.queue.push_back(pm);
+        }
         else if (sel == 2) { // play next: displace an auto-cued deck if needed
             const int act = a.mixer.activeDeck.load();
             const int idle = act < 0 ? 0 : 1 - act;
@@ -389,6 +404,7 @@ void handleMenu(App& a, HWND hwnd) {
                 a.tagField[2] = m.genre;
                 a.tagField[3] = m.year > 0 ? std::to_wstring(m.year) : L"";
                 a.tagFocus = 1;
+                a.tagCaret = int(a.tagField[1].size());
                 a.prompt = App::Prompt::TagEdit;
             } else {
                 a.status = L"not in the library (import it first)";
@@ -407,14 +423,43 @@ void handleMenu(App& a, HWND hwnd) {
                            L": " + m.label;
             }
         }
+        else if (sel == 5 && a.nav == NavMode::Playlist) {
+            std::vector<int> rows; // selected view rows, same rule as `picked`
+            if (a.selRows.size() > 1 && a.selRows.count(req.index))
+                rows.assign(a.selRows.begin(), a.selRows.end());
+            else
+                rows.push_back(req.index);
+            int n = 0, failed = 0;
+            for (int k : rows) {
+                if (k < 0 || k >= int(a.resultsPlItem.size())) continue;
+                Db::Stmt q; // by playlist_item.id: a duplicate's twin survives
+                a.db.prepare(q, "DELETE FROM playlist_item WHERE id=?1");
+                q.bind(1, a.resultsPlItem[k]);
+                // run(), not step(): a DELETE blocked by a busy database (e.g.
+                // a background scan holding the write lock) must be reported,
+                // not silently dropped — the rows would "come back" on reload.
+                q.run() ? ++n : ++failed;
+            }
+            a.selRows.clear();
+            a.selLib = -1;
+            a.searchDirty = true;
+            a.status = failed ? L"database busy — " + std::to_wstring(failed) +
+                                    L" not removed, try again"
+                              : L"removed " + std::to_wstring(n) + L" from " +
+                                    a.navPlaylistName;
+        }
         else if (sel >= 2000 && sel - 2000 < int(a.playlists.size())) {
-            addToPlaylistDb(a, a.playlists[sel - 2000].second, m);
-            a.status = L"added to " + a.playlists[sel - 2000].first;
+            for (const Match& pm : picked)
+                addToPlaylistDb(a, a.playlists[sel - 2000].second, pm);
+            a.status = L"added to " + a.playlists[sel - 2000].first +
+                       (picked.size() > 1
+                            ? L" (" + std::to_wstring(picked.size()) + L")"
+                            : L"");
             if (a.nav == NavMode::Playlist) a.searchDirty = true;
         }
         else if (sel >= 1000 && sel - 1000 < int(singers.size())) {
             a.singerName = singers[sel - 1000]; // picked singer becomes current
-            addToRotationAs(a, m, a.singerName);
+            for (const Match& pm : picked) addToRotationAs(a, pm, a.singerName);
         }
         else if (sel == 1099) {
             a.prompt = App::Prompt::NewSinger;

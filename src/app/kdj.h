@@ -149,6 +149,9 @@ struct App {
     std::set<std::wstring> expanded;       // folder tree expand state
     std::vector<std::pair<std::wstring, int>> flatFolders; // fallback, no roots
     std::vector<Match> results;
+    std::vector<int64_t> resultsPlItem; // playlist view: playlist_item.id per
+                                        // row, so removing a duplicate kills
+                                        // only the selected copy
     int libCount = 0;  // playable library rows (sidebar "All tracks (n)")
     int hiddenCount = 0; // excluded rows (sidebar "Excluded (n)", when > 0)
     bool showHidden = false; // Library view lists ONLY excluded rows
@@ -157,6 +160,8 @@ struct App {
     std::deque<Match> queue;
     int selLib = -1, selQueue = -1;
     std::set<int> selRows;    // multi-selection (shift/ctrl click) in the browser
+    int selCollapse = -1; // plain click inside the selection: collapse to this
+                          // row on release, unless the press became a drag
     // Browser columns, indexed by column id:
     // 0 TITLE 1 ARTIST 2 GENRE 3 YEAR 4 BPM 5 TIME 6 KEY.
     // colSeq = display order (values are column ids), colShow = visibility,
@@ -304,6 +309,7 @@ struct App {
     Match tagEditItem;
     std::wstring tagField[4]; // artist, title, genre, year (as text)
     int tagFocus = 1;
+    int tagCaret = 0; // caret index inside the focused tag field
     std::wstring promptText;
     ConfirmAction confirmAction = ConfirmAction::None;
     std::wstring confirmTitle, confirmL1, confirmL2; // two body lines

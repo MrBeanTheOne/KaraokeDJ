@@ -142,14 +142,21 @@ void Db::close() {
 }
 
 bool Db::exec(const char* sql) {
-    return db_ && sqlite3_exec(db_, sql, nullptr, nullptr, nullptr) == SQLITE_OK;
+    if (!db_) return false;
+    const int rc = sqlite3_exec(db_, sql, nullptr, nullptr, nullptr);
+    if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) busy_ = true;
+    return rc == SQLITE_OK;
 }
 
 int64_t Db::lastId() { return db_ ? sqlite3_last_insert_rowid(db_) : 0; }
 
 bool Db::prepare(Stmt& st, const char* sql) {
     if (st.s) { sqlite3_finalize(st.s); st.s = nullptr; }
-    return db_ && sqlite3_prepare_v2(db_, sql, -1, &st.s, nullptr) == SQLITE_OK;
+    st.owner = this;
+    if (!db_) return false;
+    const int rc = sqlite3_prepare_v2(db_, sql, -1, &st.s, nullptr);
+    if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) busy_ = true;
+    return rc == SQLITE_OK;
 }
 
 Db::Stmt::~Stmt() {
@@ -171,10 +178,15 @@ Db::Stmt& Db::Stmt::bindNull(int idx) {
     return *this;
 }
 
-bool Db::Stmt::step() { return sqlite3_step(s) == SQLITE_ROW; }
+bool Db::Stmt::step() {
+    const int rc = sqlite3_step(s);
+    if ((rc == SQLITE_BUSY || rc == SQLITE_LOCKED) && owner) owner->busy_ = true;
+    return rc == SQLITE_ROW;
+}
 
 bool Db::Stmt::run() {
     const int rc = sqlite3_step(s);
+    if ((rc == SQLITE_BUSY || rc == SQLITE_LOCKED) && owner) owner->busy_ = true;
     return rc == SQLITE_DONE || rc == SQLITE_ROW;
 }
 

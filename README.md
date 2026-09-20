@@ -70,10 +70,15 @@ Settings) and points you at the download when one exists.
   and tells you how many it skipped.
 - Sortable, resizable, reorderable columns (title, artist, genre, year, BPM,
   time, **key**) — right-click the header to choose what shows.
-- Playlists with drag-reorder, played-tonight dots, multi-select drag to
-  queue.
+- Playlists with drag-reorder, played-tonight dots, and **multi-select
+  everywhere**: shift/ctrl-click several tracks, then drag or right-click to
+  queue, playlist or rotation them all at once — or remove them from a
+  playlist in one go (duplicates are kept apart: only the copies you selected
+  go).
 - **Tag editor**: right-click any track to fix artist/title/genre/year — in
-  the library only, or written straight into the file's real tags.
+  the library only, or written straight into the file's real tags. Real
+  cursor editing: click anywhere in a field, arrow keys move, up/down hop
+  between lines.
 - **Exclude bad versions**: right-click hides a track from search and phone
   requests; an Excluded view brings anything back.
 
@@ -99,6 +104,9 @@ Settings) and points you at the download when one exists.
   night exactly where it stopped. Closing on purpose asks first, then clears
   the decks, the queue, the singer rotation and tonight's played marks, so the
   next night opens on a fresh room. Your library, playlists and markers stay.
+- **Settings save as you go** (every few seconds, waiting-screen design
+  included) — a crash or kill costs nothing. If the database is ever too busy
+  to take a change, the status line says so instead of losing it silently.
 - **Audio device recovery**: pulling the USB interface mid-song recovers
   without a restart.
 - **Second-screen video output** with letterbox / fill / stretch fit modes.

@@ -212,6 +212,12 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                 }
             }
         }
+        if (!a.dragging && a.selCollapse >= 0) { // plain click, no drag:
+            a.selRows.clear();                   // multi-selection collapses
+            a.selRows.insert(a.selCollapse);     // to the clicked row
+            a.selLib = a.selCollapse;
+        }
+        a.selCollapse = -1;
         a.dragArmed = a.dragging = false;
         a.dragItems.clear();
         a.dragFromQueue = a.dragFromList = a.dragSinger = -1;
@@ -261,11 +267,18 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                 ui.rect(fb, cInset, 6);
                 ui.frameRect(fb, a.tagFocus == k ? cAccent : cBorder, 5);
                 ui.text(rc(fb.left + 8, fb.top, fb.right - fb.left - 16, 26),
-                        a.tagField[k] +
-                            (a.tagFocus == k && caretOn() ? L"▏" : L""),
-                        12, cText, 0, false);
-                if (ui.in.pressed && hit(fb, ui.in.pressX, ui.in.pressY))
-                    a.tagFocus = k;
+                        a.tagField[k], 12, cText, 0, false);
+                if (a.tagFocus == k && caretOn()) {
+                    const float cx2 =
+                        fb.left + 8 + ui.caretX(a.tagField[k], 12,
+                                                size_t((std::max)(a.tagCaret, 0)));
+                    ui.line(cx2, fb.top + 5, cx2, fb.bottom - 5, cText, 1.f);
+                }
+                if (ui.in.pressed && hit(fb, ui.in.pressX, ui.in.pressY)) {
+                    a.tagFocus = k; // caret lands where the click was
+                    a.tagCaret = ui.caretFromX(a.tagField[k], 12,
+                                               ui.in.pressX - fb.left - 8);
+                }
                 cy2 += 34;
             }
             if (ui.button(502, rc(p.left + 16, p.bottom - 40, 130, 28),

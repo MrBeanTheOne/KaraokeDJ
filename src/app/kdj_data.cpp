@@ -194,8 +194,10 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "audio_device", a.audioDevice);
     setSetting(a.db, "win_max", a.winMax ? "1" : "0");
     setSetting(a.db, "win_full", a.appFull ? "1" : "0");
-    setSetting(a.db, "win_w", std::to_string(winW));
-    setSetting(a.db, "win_h", std::to_string(winH));
+    if (winW) { // 0 = mid-session save (crash guard): window size is exit-only
+        setSetting(a.db, "win_w", std::to_string(winW));
+        setSetting(a.db, "win_h", std::to_string(winH));
+    }
 }
 
 // -------------------------------------------------------------- data loading
@@ -280,7 +282,7 @@ void reloadNav(App& a) {
     if (sf.empty()) { // waiting-screen singer list follows the live rotation
         a.idleSingerLines.clear();
         for (const SingerRow& r2 : a.singers) {
-            if (a.idleSingerLines.size() >= 6) break;
+            if (a.idleSingerLines.size() >= 5) break; // next 5 only — keeps the screen uncluttered
             if (r2.itemId < 0 ||
                 (r2.status != "waiting" && r2.status != "singing"))
                 continue;
@@ -376,9 +378,10 @@ void reloadBrowser(App& a) {
                                 a.sortAsc);
     } else if (a.nav == NavMode::Playlist) {
         a.results.clear();
+        a.resultsPlItem.clear();
         Db::Stmt q;
         a.db.prepare(q, "SELECT m.id, m.artist, m.title, m.path, m.type, m.duration_ms, "
-                        "m.genre, m.year, m.bpm, IFNULL(m.music_key,0) "
+                        "m.genre, m.year, m.bpm, IFNULL(m.music_key,0), pi.id "
                         "FROM playlist_item pi JOIN media_item m ON m.id=pi.media_id "
                         "WHERE pi.playlist_id=?1 ORDER BY pi.position");
         q.bind(1, a.navPlaylist);
@@ -392,6 +395,7 @@ void reloadBrowser(App& a) {
             if (!termLower.empty() &&
                 foldW(m.label + L" " + m.path).find(termLower) == std::wstring::npos)
                 continue;
+            a.resultsPlItem.push_back(q.colInt(10));
             a.results.push_back(std::move(m));
         }
     }

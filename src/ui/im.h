@@ -34,6 +34,7 @@ struct UiInput {
     bool enter = false, del = false, pgdn = false, pgup = false;
     bool pauseKey = false, esc = false; // gig shortcuts (main window)
     int navKey = 0;                     // browser arrows: -1 up, +1 down
+    int caretKey = 0;                   // left/right arrows: -1/+1 (tag editor)
 };
 
 inline D2D1_COLOR_F col(uint32_t rgb, float a = 1.f) {
@@ -86,6 +87,11 @@ public:
     // changes at draw sites.
     void text(const D2D1_RECT_F& r, const std::wstring& s, float size, D2D1_COLOR_F c,
               int align = 0, bool bold = false);
+    // Caret helpers for editable boxes (regular left-aligned font): character
+    // index for a click at x pixels into the text, and the pixel offset of a
+    // caret index — both via DirectWrite so kerning is respected.
+    int caretFromX(const std::wstring& s, float size, float x);
+    float caretX(const std::wstring& s, float size, size_t caret);
 
     bool button(int id, const D2D1_RECT_F& r, const std::wstring& label,
                 D2D1_COLOR_F accent, bool filled = false);

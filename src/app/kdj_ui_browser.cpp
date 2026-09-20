@@ -358,8 +358,10 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
             } else {
                 a.selLib = int(i);
                 if (!a.selRows.count(int(i))) { // click outside the selection
-                    a.selRows.clear();          // collapses it; inside keeps it
-                    a.selRows.insert(int(i));   // so the group can be dragged
+                    a.selRows.clear();          // collapses it now; inside it
+                    a.selRows.insert(int(i));   // stays armed for a group drag
+                } else if (a.selRows.size() > 1) {
+                    a.selCollapse = int(i); // no drag by release = collapse
                 }
                 if (multiView) {
                     a.dragArmed = true;

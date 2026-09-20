@@ -213,6 +213,8 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_KEYDOWN:
         if (wp == VK_DELETE) g_pending.del = true;
+        else if (wp == VK_LEFT) g_pending.caretKey = -1;
+        else if (wp == VK_RIGHT) g_pending.caretKey = 1;
         else if (wp == VK_NEXT) g_pending.pgdn = true;
         else if (wp == VK_PRIOR) g_pending.pgup = true;
         else if (wp == VK_UP) g_pending.navKey = -1;
@@ -428,17 +430,23 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         // Keyboard input is consumed immediately — the loop runs several times
         // per drawn frame, and reprocessing pending characters duplicates them.
         for (wchar_t c : g_pending.typed) {
+            if (a.prompt == App::Prompt::TagEdit) { // caret-aware editing
+                std::wstring& t = a.tagField[std::clamp(a.tagFocus, 0, 3)];
+                int& cp = a.tagCaret;
+                cp = std::clamp(cp, 0, int(t.size()));
+                if (c == 8) { if (cp > 0) t.erase(size_t(--cp), 1); }
+                else { t.insert(t.begin() + cp, c); ++cp; }
+                continue;
+            }
             Focus tgt = a.focus; // typing with no focus goes to the view's box
             if (a.prompt == App::Prompt::None && tgt == Focus::None)
                 tgt = a.nav == NavMode::Singers ? Focus::SingerName
                                                 : Focus::Search;
             std::wstring& target =
-                a.prompt == App::Prompt::TagEdit
-                    ? a.tagField[std::clamp(a.tagFocus, 0, 3)]
-                : a.prompt != App::Prompt::None ? a.promptText
-                : tgt == Focus::SingerName      ? a.singerFilter
-                : tgt == Focus::IdleTitle       ? a.idleTitle
-                                                : a.search;
+                a.prompt != App::Prompt::None ? a.promptText
+                : tgt == Focus::SingerName    ? a.singerFilter
+                : tgt == Focus::IdleTitle     ? a.idleTitle
+                                              : a.search;
             if (c == 8) { if (!target.empty()) target.pop_back(); }
             else target += c;
             if (a.prompt == App::Prompt::None) {
@@ -463,6 +471,18 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             } else if (a.nav != NavMode::Singers && a.nav != NavMode::Settings &&
                        a.nav != NavMode::History) {
                 queueSelected(a);
+            }
+        }
+        if (a.prompt == App::Prompt::TagEdit) { // caret moves + field hopping
+            std::wstring& t = a.tagField[std::clamp(a.tagFocus, 0, 3)];
+            a.tagCaret = std::clamp(a.tagCaret + g_pending.caretKey, 0,
+                                    int(t.size()));
+            if (g_pending.del && a.tagCaret < int(t.size()))
+                t.erase(size_t(a.tagCaret), 1);
+            if (g_pending.navKey) { // up/down walk the four tag lines
+                a.tagFocus = std::clamp(a.tagFocus + g_pending.navKey, 0, 3);
+                a.tagCaret = (std::min)(
+                    a.tagCaret, int(a.tagField[a.tagFocus].size()));
             }
         }
         if (a.prompt == App::Prompt::None && g_pending.del && a.selQueue >= 0 &&
@@ -519,7 +539,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         }
         g_pending.enter = g_pending.del = g_pending.pgdn = g_pending.pgup = false;
         g_pending.pauseKey = g_pending.esc = false;
-        g_pending.navKey = 0;
+        g_pending.navKey = g_pending.caretKey = 0;
         if (a.pickDone.exchange(false)) {
             if (a.pickThread.joinable()) a.pickThread.join();
             if (!a.pickResult.empty()) {

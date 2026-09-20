@@ -42,9 +42,21 @@ public:
         int64_t colInt(int i) const;
         std::string colText(int i) const;
         sqlite3_stmt* s = nullptr;
+        Db* owner = nullptr; // set by prepare(): reports SQLITE_BUSY upward
     };
     bool prepare(Stmt& st, const char* sql);
 
+    // True once if any statement on this connection hit SQLITE_BUSY/LOCKED
+    // since the last call (cleared on read). A write that outlives the busy
+    // timeout is silently dropped otherwise — the UI polls this every tick
+    // so the operator learns their change may not have saved.
+    bool takeBusy() {
+        const bool b = busy_;
+        busy_ = false;
+        return b;
+    }
+
 private:
     sqlite3* db_ = nullptr;
+    bool busy_ = false;
 };

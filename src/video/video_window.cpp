@@ -358,7 +358,9 @@ void VideoWindow::drawIdle() {
         const float frac = 0.26f * sizeMul(eq.size);
         const float cell = (std::max)(2.f, s.height * frac / float(qrSize_ + 8));
         const float qw = cell * (qrSize_ + 8); // 4-module quiet zone each side
-        const float szQ = (std::max)(11.f, s.height * 0.020f);
+        // Caption scales with the card: full-size text under a small QR wraps
+        // into the url line and the overflow gets hidden.
+        const float szQ = (std::max)(11.f, s.height * 0.020f * sizeMul(eq.size));
         const float capH = szQ * 3.4f;
         const int c = eq.pos % 3, r = eq.pos / 3;
         const float qx = c == 0 ? mg : c == 2 ? s.width - mg - qw
@@ -387,6 +389,7 @@ void VideoWindow::drawIdle() {
                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, szQ, L"",
                 &qf))) {
             qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            qf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
             brush->SetColor(D2D1::ColorF(0xE8ECF1));
             const std::wstring& cap = scene_.qrCaption;
             rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,

@@ -684,9 +684,14 @@ void engineTick(App& a) {
         a.gainSet[d] = true;
     }
     if (a.fullOut && !a.fullOut->pump()) { a.fullOut.reset(); a.outMonitor = -1; }
+    if (a.db.takeBusy()) // a write timed out on the busy handler: say so
+        a.status = L"database busy — last change may not have saved";
     if (now - a.lastSnapAt >= 5s) { // session snapshot for crash recovery
         a.lastSnapAt = now;
         saveSnapshot(a);
+        // Settings too: they used to be written only on clean exit, so a
+        // crash/kill lost e.g. the waiting-screen design. 0,0 = skip win size.
+        saveSettings(a, 0, 0);
     }
     presentVideo(a);
 }
