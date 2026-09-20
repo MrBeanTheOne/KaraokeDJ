@@ -10,3 +10,5 @@ KaraokeDJ-*-win64.exe
 input/
 redist/
 __pycache__/
+
+*.kdjprofile
