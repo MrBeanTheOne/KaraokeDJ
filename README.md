@@ -108,6 +108,9 @@ Settings) and points you at the download when one exists.
 - **Settings save as you go** (every few seconds, waiting-screen design
   included) — a crash or kill costs nothing. If the database is ever too busy
   to take a change, the status line says so instead of losing it silently.
+- **One-click updates**: Settings → GET UPDATE downloads the new installer
+  and restarts into it — no browser trip. The relaunched app restores the
+  decks, queue and rotation exactly as you left them.
 - **Audio device recovery**: pulling the USB interface mid-song recovers
   without a restart.
 - **Second-screen video output** with letterbox / fill / stretch fit modes.

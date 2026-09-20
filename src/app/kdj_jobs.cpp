@@ -52,7 +52,7 @@ void startUpdateCheck(App& a, bool manual) {
     a.updThread = std::thread([&a]() {
         const std::string body = httpsGet(
             L"api.github.com", L"/repos/MrBeanTheOne/KaraokeDJ/releases/latest");
-        std::wstring latest;
+        std::wstring latest, asset;
         std::wstring err = L"couldn't reach GitHub";
         const size_t k = body.find("\"tag_name\":\"");
         if (k != std::string::npos) {
@@ -67,14 +67,124 @@ void startUpdateCheck(App& a, bool manual) {
                 const bool newer = rel[0] != cur[0]   ? rel[0] > cur[0]
                                    : rel[1] != cur[1] ? rel[1] > cur[1]
                                                       : rel[2] > cur[2];
-                if (newer) latest = wide(tag);
+                if (newer) {
+                    latest = wide(tag);
+                    // The installer asset, for the in-app download. Missing
+                    // (release without one) falls back to the browser.
+                    static const char kUrl[] = "\"browser_download_url\":\"";
+                    size_t p = body.find(kUrl);
+                    while (p != std::string::npos) {
+                        const size_t b2 = p + sizeof(kUrl) - 1;
+                        const size_t e2 = body.find('"', b2);
+                        if (e2 == std::string::npos) break;
+                        const std::string u = body.substr(b2, e2 - b2);
+                        if (u.find("win64.exe") != std::string::npos) {
+                            asset = wide(u);
+                            break;
+                        }
+                        p = body.find(kUrl, e2);
+                    }
+                }
                 err.clear();
             }
         }
         a.updLatest = std::move(latest); // written before updDone is set
+        a.updAssetUrl = std::move(asset);
         a.updError = std::move(err);
         a.updBusy.store(false);
         a.updDone.store(true);
+    });
+}
+
+// Binary GET to a file, with percent progress. WinHTTP follows the GitHub
+// asset redirect (https→https) on its own.
+static bool httpsDownload(const std::wstring& url, const std::wstring& outFile,
+                          std::atomic<int>& pct) {
+    const size_t hs = url.find(L"://");
+    if (hs == std::wstring::npos) return false;
+    const size_t ps = url.find(L'/', hs + 3);
+    if (ps == std::wstring::npos) return false;
+    const std::wstring host = url.substr(hs + 3, ps - hs - 3);
+    const std::wstring path = url.substr(ps);
+
+    bool ok = false;
+    HINTERNET ses = WinHttpOpen(L"KaraokeDJ", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!ses) return false;
+    if (HINTERNET con = WinHttpConnect(ses, host.c_str(),
+                                       INTERNET_DEFAULT_HTTPS_PORT, 0)) {
+        if (HINTERNET req = WinHttpOpenRequest(con, L"GET", path.c_str(), nullptr,
+                                               WINHTTP_NO_REFERER,
+                                               WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                               WINHTTP_FLAG_SECURE)) {
+            if (WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                   WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+                WinHttpReceiveResponse(req, nullptr)) {
+                DWORD status = 0, sz = sizeof(status);
+                WinHttpQueryHeaders(req,
+                                    WINHTTP_QUERY_STATUS_CODE |
+                                        WINHTTP_QUERY_FLAG_NUMBER,
+                                    WINHTTP_HEADER_NAME_BY_INDEX, &status, &sz,
+                                    WINHTTP_NO_HEADER_INDEX);
+                DWORD total = 0;
+                sz = sizeof(total);
+                WinHttpQueryHeaders(req,
+                                    WINHTTP_QUERY_CONTENT_LENGTH |
+                                        WINHTTP_QUERY_FLAG_NUMBER,
+                                    WINHTTP_HEADER_NAME_BY_INDEX, &total, &sz,
+                                    WINHTTP_NO_HEADER_INDEX);
+                HANDLE f = status == 200
+                               ? CreateFileW(outFile.c_str(), GENERIC_WRITE, 0,
+                                             nullptr, CREATE_ALWAYS,
+                                             FILE_ATTRIBUTE_NORMAL, nullptr)
+                               : INVALID_HANDLE_VALUE;
+                if (f != INVALID_HANDLE_VALUE) {
+                    uint64_t got = 0;
+                    ok = true;
+                    for (;;) {
+                        char buf[64 * 1024];
+                        DWORD n = 0;
+                        if (!WinHttpReadData(req, buf, sizeof(buf), &n)) {
+                            ok = false;
+                            break;
+                        }
+                        if (!n) break; // done
+                        DWORD wr = 0;
+                        if (!WriteFile(f, buf, n, &wr, nullptr) || wr != n) {
+                            ok = false;
+                            break;
+                        }
+                        got += n;
+                        if (total) pct.store(int(got * 100 / total));
+                    }
+                    CloseHandle(f);
+                    // An HTML error page saved as .exe must never be run.
+                    if (ok && got < (1u << 20)) ok = false;
+                    if (!ok) DeleteFileW(outFile.c_str());
+                }
+            }
+            WinHttpCloseHandle(req);
+        }
+        WinHttpCloseHandle(con);
+    }
+    WinHttpCloseHandle(ses);
+    return ok;
+}
+
+void startUpdateDownload(App& a) {
+    if (a.updDlBusy.load() || a.updAssetUrl.empty()) return;
+    if (a.updDlThread.joinable()) a.updDlThread.join();
+    a.updDlBusy.store(true);
+    a.updDlPct.store(0);
+    const std::wstring url = a.updAssetUrl, ver = a.updLatest;
+    a.updDlThread = std::thread([&a, url, ver]() {
+        wchar_t tmp[MAX_PATH]{};
+        GetTempPathW(MAX_PATH, tmp);
+        const std::wstring file =
+            std::wstring(tmp) + L"KaraokeDJ-" + ver + L"-win64.exe";
+        a.updFile = httpsDownload(url, file, a.updDlPct) ? file : L"";
+        a.updDlBusy.store(false);
+        a.updDlDone.store(true);
     });
 }
 

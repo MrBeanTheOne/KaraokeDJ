@@ -679,6 +679,21 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             a.searchDirty = true;
             a.status = L"BPM analysis complete";
         }
+        if (a.updDlDone.exchange(false)) { // in-app update: installer is down
+            if (a.updDlThread.joinable()) a.updDlThread.join();
+            if (!a.updFile.empty() &&
+                reinterpret_cast<INT_PTR>(
+                    ShellExecuteW(nullptr, L"open", a.updFile.c_str(), nullptr,
+                                  nullptr, SW_SHOWNORMAL)) > 32) {
+                // Close for the installer. updRestart keeps snap_clean at 0,
+                // so the new version restores decks/queue/rotation on launch.
+                a.updRestart = true;
+                a.quitConfirmed = true;
+            } else {
+                a.status = L"update download failed — use CHECK FOR UPDATES "
+                           L"again or the GitHub page";
+            }
+        }
         if (a.updDone.exchange(false)) {
             if (a.updThread.joinable()) a.updThread.join();
             if (!a.updLatest.empty())
@@ -845,7 +860,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     const RECT& wr = wp.rcNormalPosition;
     saveSettings(a, UINT(wr.right - wr.left), UINT(wr.bottom - wr.top));
     saveSnapshot(a); // final state, then mark the exit graceful
-    setSetting(a.db, "snap_clean", "1");
+    // An update restart leaves the crash flag down on purpose: the freshly
+    // installed version restores the decks/queue/rotation it closed with.
+    setSetting(a.db, "snap_clean", a.updRestart ? "0" : "1");
     a.scanProg.cancel.store(true); // closing cancels a running import promptly;
     a.bpmStop.store(true);         // committed rows survive either way
     a.fullOut.reset();             // a window: destroy it on the thread that made it
@@ -867,6 +884,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.scanThread.joinable()) a.scanThread.join();
         if (a.bpmThread.joinable()) a.bpmThread.join();
         if (a.updThread.joinable()) a.updThread.join();
+        if (a.updDlThread.joinable()) a.updDlThread.join();
         stopWatcher(a);
         a.web.stop();
         if (a.ytThread.joinable()) a.ytThread.join();

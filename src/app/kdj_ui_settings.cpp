@@ -95,14 +95,25 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
             L"trims every track toward the same loudness", 10, cDim, 0, false);
     y += 40;
     if (!a.updLatest.empty()) { // newer release on GitHub
-        if (ui.button(604, rc(x, y, 300, 28),
-                      L"GET UPDATE  v" + a.updLatest, cGreen, true))
-            ShellExecuteW(nullptr, L"open",
-                          L"https://github.com/MrBeanTheOne/KaraokeDJ/"
-                          L"releases/latest",
-                          nullptr, nullptr, SW_SHOWNORMAL);
+        const bool dl = a.updDlBusy.load();
+        const std::wstring lbl =
+            dl ? uiTr(L"DOWNLOADING…") + L"  " +
+                     std::to_wstring(a.updDlPct.load()) + L"%"
+               : L"GET UPDATE  v" + a.updLatest;
+        if (ui.button(604, rc(x, y, 300, 28), lbl, cGreen, !dl) && !dl) {
+            if (!a.updAssetUrl.empty())
+                startUpdateDownload(a); // installs in place, night restored
+            else // release without an installer asset: browser fallback
+                ShellExecuteW(nullptr, L"open",
+                              L"https://github.com/MrBeanTheOne/KaraokeDJ/"
+                              L"releases/latest",
+                              nullptr, nullptr, SW_SHOWNORMAL);
+        }
         ui.text(rc(x + 310, y, w - 310, 28),
-                uiTr(L"opens the download page — this is v") + KDJ_VERSION_W,
+                dl ? uiTr(L"the app restarts into the installer when ready")
+                : a.updAssetUrl.empty()
+                    ? uiTr(L"opens the download page — this is v") + KDJ_VERSION_W
+                    : uiTr(L"downloads and installs — this is v") + KDJ_VERSION_W,
                 10, cDim, 0, false);
     } else {
         if (ui.button(604, rc(x, y, 300, 28), L"CHECK FOR UPDATES", cDim))

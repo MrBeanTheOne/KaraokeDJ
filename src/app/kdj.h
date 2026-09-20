@@ -345,9 +345,19 @@ struct App {
     std::thread updThread;
     std::atomic<bool> updBusy{false};
     std::atomic<bool> updDone{false};
-    std::wstring updLatest; // newer version ("1.2.0") or "" when current
-    std::wstring updError;  // "" on success
+    std::wstring updLatest;   // newer version ("1.2.0") or "" when current
+    std::wstring updError;    // "" on success
+    std::wstring updAssetUrl; // installer download url ("" = no asset: browser)
     bool updManual = false;
+    // In-app update: installer downloaded in the background, then the app
+    // launches it and closes. snap_clean stays 0 so the relaunch restores
+    // the decks/queue/rotation like a crash recovery would.
+    std::thread updDlThread;
+    std::atomic<bool> updDlBusy{false};
+    std::atomic<bool> updDlDone{false};
+    std::atomic<int> updDlPct{0};
+    std::wstring updFile;   // downloaded installer ("" = download failed)
+    bool updRestart = false; // quitting to run the installer
 
     // YouTube download (yt-dlp.exe beside the app or on PATH)
     std::thread ytThread;
@@ -474,6 +484,7 @@ void startWatcher(App& a); // (re)build from scan roots; no-op when watchOn off
 void stopWatcher(App& a);
 void startBpmAnalysis(App& a);
 void startUpdateCheck(App& a, bool manual);
+void startUpdateDownload(App& a);
 std::wstring pickFolder(HWND owner);
 std::wstring pickFile(HWND owner); // image picker (waiting-screen logo)
 std::wstring pickProfile(HWND owner, bool save); // .kdjprofile open/save
