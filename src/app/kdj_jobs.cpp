@@ -555,7 +555,7 @@ bool exportProfile(App& a, const std::wstring& file) {
     const bool ok =
         a.db.exec("CREATE TABLE exp.settings AS SELECT key, value FROM settings "
                   "WHERE key NOT IN ('win_w','win_h','audio_device',"
-                  "'video_monitor','snap_blob','snap_clean');") &&
+                  "'video_monitor','snap_blob','snap_clean','reconcile_id');") &&
         a.db.exec("CREATE TABLE exp.media AS SELECT path, artist, title, genre, "
                   "year, bpm, IFNULL(music_key,0) music_key, cue_in_ms, "
                   "cue_out_ms, IFNULL(hidden,0) hidden FROM media_item;") &&
@@ -593,8 +593,9 @@ bool importProfile(App& a, const std::wstring& file, int* matched, int* total) {
     const bool hasKey =
         a.db.prepare(probe, "SELECT music_key FROM imp.media LIMIT 1");
     const bool ok =
+        // reconcile_id is this library's scan watermark, never another's
         a.db.exec("INSERT OR REPLACE INTO settings SELECT key, value "
-                  "FROM imp.settings;") &&
+                  "FROM imp.settings WHERE key<>'reconcile_id';") &&
         a.db.exec(hasKey
                   ? "UPDATE media_item SET (artist,title,genre,year,bpm,"
                     "music_key,cue_in_ms,cue_out_ms,hidden) = "

@@ -132,9 +132,28 @@ struct GentleMode {
 // heals on its next scan. A ghost is only a ghost when its drive is present
 // and the file is not on it (unplugged drives and UNC are never judged — see
 // decisions.md). Both copies present = a real duplicate, left alone.
-// ponytail: stats every row of every same-size+mtime group per scan; fine at
-// ~100k rows, track "rows added this scan" if genuine duplicates explode.
+// A move always inserts a NEW row, so only groups holding a row newer than the
+// last pass (settings.reconcile_id) can contain one; the first pass covers the
+// whole library, which is what heals duplicates from before this existed.
+// Without the watermark, a library with a full copy elsewhere (a NAS backup)
+// put every song in a group and stat'd the whole library after every scan.
 static int reconcileMoves(Db& db) {
+    int64_t mark = 0, top = 0;
+    {
+        Db::Stmt q;
+        db.prepare(q, "SELECT (SELECT CAST(value AS INTEGER) FROM settings "
+                      "WHERE key='reconcile_id'), (SELECT MAX(id) FROM media_item)");
+        if (q.step()) {
+            mark = q.colInt(0);
+            top = q.colInt(1);
+        }
+    }
+    auto advance = [&] { // this pass looked at everything up to `top`
+        Db::Stmt s;
+        db.prepare(s, "INSERT INTO settings(key,value) VALUES('reconcile_id',?1) "
+                      "ON CONFLICT(key) DO UPDATE SET value=?1");
+        s.bind(1, std::to_string(top)).run();
+    };
     struct Row {
         int64_t id;
         std::wstring path, artist, title;
@@ -198,8 +217,9 @@ static int reconcileMoves(Db& db) {
                       "IFNULL(m.artist,''), IFNULL(m.title,'') "
                       "FROM media_item m JOIN (SELECT file_size fs, modified_time mt "
                       "FROM media_item WHERE file_size>0 GROUP BY 1,2 "
-                      "HAVING COUNT(*)>1) g ON m.file_size=g.fs AND "
-                      "m.modified_time=g.mt ORDER BY 3, 4, 1");
+                      "HAVING COUNT(*)>1 AND MAX(id)>?1) g ON m.file_size=g.fs "
+                      "AND m.modified_time=g.mt ORDER BY 3, 4, 1");
+        q.bind(1, mark);
         std::vector<Row> g;
         int64_t fs = -1, mt = -1;
         while (q.step()) {
@@ -213,7 +233,10 @@ static int reconcileMoves(Db& db) {
         }
         pairGroup(g);
     }
-    if (pairs.empty()) return 0;
+    if (pairs.empty()) {
+        advance();
+        return 0;
+    }
 
     // The ghost keeps its identity (playlists, rotation, history) and the
     // user's edits; the fresh row contributes the new path, its CDG pairing,
@@ -257,6 +280,7 @@ static int reconcileMoves(Db& db) {
         }
         if (!ok) break;
     }
+    if (ok) advance(); // same transaction: a rolled-back pass is retried
     // all or nothing: a half-merged pair would strand a playlist entry
     db.exec(ok ? "COMMIT;" : "ROLLBACK;");
     return ok ? int(pairs.size()) : 0;
@@ -374,24 +398,36 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
     }
 
     // Phase 4 — insert in order as results land; chunked commits keep most of
-    // a long import if anything dies mid-way.
+    // a long import if anything dies mid-way. The write transaction is open
+    // only while ready rows are being written, never while waiting on a tag
+    // read: over a NAS those waits are long, and holding the write lock
+    // through them froze the UI thread's every write (the 5 s settings save)
+    // on the 3 s busy timeout, for the whole import.
     auto junk = [](std::wstring t) { // rip-tool tags lose to the filename
         std::transform(t.begin(), t.end(), t.begin(), ::towlower);
         for (auto* j : {L"piste", L"track", L"audiotrack", L"unknown"})
             if (t.rfind(j, 0) == 0) return true;
         return t.empty();
     };
-    db.exec("BEGIN;");
-    bool cancelled = false;
+    bool cancelled = false, inTx = false;
+    std::chrono::steady_clock::time_point txFrom;
     for (size_t i = 0; i < work.size() && !cancelled; ++i) {
+        const auto waitFrom = std::chrono::steady_clock::now();
         while (!metas[i].ready.load(std::memory_order_acquire)) {
             if (prog->cancel.load(std::memory_order_relaxed)) {
                 cancelled = true; // committed rows stay; rescan resumes here
                 break;
             }
+            // a short gap keeps the batch (one commit, not one per row); a
+            // slow read (NAS) commits so the UI can write while we wait
+            if (inTx && std::chrono::steady_clock::now() - waitFrom > 20ms) {
+                db.exec("COMMIT;");
+                inTx = false;
+            }
             std::this_thread::sleep_for(1ms);
         }
         if (cancelled) break;
+        if (!inTx && (inTx = db.exec("BEGIN;"))) txFrom = std::chrono::steady_clock::now();
         const Item& w = work[i];
         const Meta& m = metas[i];
         std::wstring artist, title;
@@ -422,14 +458,24 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
         if (w.type == "unsupported") ++st.unsupported;
         w.existed ? ++st.updated : ++st.added;
         prog->done.store(int(i + 1), std::memory_order_relaxed);
-        if ((i + 1) % 500 == 0) {
+        // Reads arriving steadily never trigger the wait commit above, so
+        // cap the transaction by time too: the UI never waits much past this.
+        if (inTx && std::chrono::steady_clock::now() - txFrom > 100ms) {
             db.exec("COMMIT;");
-            db.exec("BEGIN;");
+            inTx = false;
+            // SQLite's lock is not fair: re-locking at once starves a waiting
+            // UI write. Leave a gap longer than a timer tick (the busy handler
+            // polls once per tick); tag reads carry on meanwhile.
+            std::this_thread::sleep_for(25ms);
+        }
+        if ((i + 1) % 500 == 0) {
+            if (inTx) db.exec("COMMIT;");
+            inTx = false;
             wprintf(L"  ...%zu / %zu\n", i + 1, work.size());
             fflush(stdout);
         }
     }
-    db.exec("COMMIT;");
+    if (inTx) db.exec("COMMIT;");
     for (auto& t : workers) t.join();
     if (!cancelled && !prog->cancel.load()) st.moved = reconcileMoves(db);
     return st;

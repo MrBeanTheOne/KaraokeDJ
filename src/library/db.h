@@ -60,4 +60,5 @@ public:
 private:
     sqlite3* db_ = nullptr;
     bool busy_ = false;
+    uint64_t busyFrom_ = 0; // busy handler: when the current wait began
 };

@@ -54,7 +54,8 @@ Settings) and points you at the download when one exists.
 
 ### 📚 A library that keeps up
 - Fast parallel import with live progress; closing mid-import is safe, and a
-  mid-gig import drops to background priority so playback always wins.
+  mid-gig import drops to background priority so playback always wins. The
+  app stays responsive while importing, even from a slow NAS.
 - Built for **big collections**: 100k+ track libraries browse and search
   smoothly (pre-folded search text, debounced queries).
 - **Stays in sync**: right-click a folder to rescan it, one button rescans

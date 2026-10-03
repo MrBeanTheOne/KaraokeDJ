@@ -108,7 +108,20 @@ CREATE TABLE IF NOT EXISTS play_history(
 bool Db::open(const std::wstring& path) {
     close();
     if (sqlite3_open(utf8(path).c_str(), &db_) != SQLITE_OK) { close(); return false; }
-    sqlite3_busy_timeout(db_, 3000); // background import scans share the file
+    // Background import scans share the file. sqlite3_busy_timeout backs off
+    // to 100 ms naps, and a writer asleep that long almost never lands in the
+    // brief gap between a busy import's commits — measured 3.3 s UI stalls
+    // importing from a NAS. Poll every timer tick instead; still give up at 3 s.
+    sqlite3_busy_handler(
+        db_,
+        [](void* from, int n) -> int {
+            auto& t0 = *static_cast<uint64_t*>(from);
+            if (n == 0) t0 = GetTickCount64();
+            if (GetTickCount64() - t0 >= 3000) return 0;
+            Sleep(1);
+            return 1;
+        },
+        &busyFrom_);
     sqlite3_create_function(db_, "fold", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
                             nullptr, sqlFold, nullptr, nullptr);
     exec("PRAGMA journal_mode=WAL;");
