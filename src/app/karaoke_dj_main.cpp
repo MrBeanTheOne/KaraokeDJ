@@ -637,6 +637,19 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         }
         if (a.scanFinished.exchange(false)) {
             a.navDirty = a.searchDirty = true;
+            // The scan may have folded a moved file's new row into its old
+            // id (reconcileMoves); path is the stable key, so re-resolve the
+            // ids held in memory. Rotation/history reload via navDirty.
+            auto reid = [&](Match& m) {
+                if (!m.id || m.path.empty()) return;
+                Db::Stmt q;
+                a.db.prepare(q, "SELECT id FROM media_item WHERE path=?1");
+                q.bind(1, utf8(m.path));
+                if (q.step()) m.id = q.colInt(0);
+            };
+            for (auto& m : a.queue) reid(m);
+            for (auto& m : a.deckMatch) reid(m);
+            for (auto& r : a.reqInbox) reid(r.song);
             a.status = L"import complete";
             if (!a.rescanQueue.empty()) { // next folder in the update line
                 const std::wstring next = a.rescanQueue.front();

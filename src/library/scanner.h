@@ -6,6 +6,7 @@ class Db;
 
 struct ScanStats {
     int seen = 0, added = 0, updated = 0, unchanged = 0, unsupported = 0;
+    int moved = 0; // new paths folded back into their old rows (file moved)
 };
 
 // Live progress for a running scan (poll from another thread). Set `cancel`

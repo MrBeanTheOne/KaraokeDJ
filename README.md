@@ -63,6 +63,10 @@ Settings) and points you at the download when one exists.
 - **Drive letter changed?** Right-click the folder → **relocate** and point it
   at the new location. Your playlists, rotation, history, markers, BPM and
   detected keys all stay attached — no re-import, no re-analysis.
+- **Reorganise freely**: move or rename files between folders and rescan —
+  each moved song is recognised as the same track, not added again, and
+  keeps its playlists, history, cues, BPM and key. Real duplicate copies
+  stay separate.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
 - **Unplugged drive? Its tracks grey out** and refuse to be queued or loaded,
   so nothing fails mid-gig. They come back by themselves when the drive

@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(karaoke-dj VERSION 1.1.23 LANGUAGES C CXX)
+project(karaoke-dj VERSION 1.1.24 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -108,6 +108,13 @@ add_executable(test_decode tests/unit/test_decode.cpp
 target_include_directories(test_decode PRIVATE src)
 target_link_libraries(test_decode PRIVATE mfplat mfreadwrite mfuuid ole32)
 target_compile_options(test_decode PRIVATE /UNDEBUG) # see the note on test_core
+
+# Library scan: a moved file keeps its row (playlists, BPM, history).
+add_executable(test_scan tests/unit/test_scan.cpp src/library/db.cpp
+  src/library/scanner.cpp)
+target_include_directories(test_scan PRIVATE src)
+target_link_libraries(test_scan PRIVATE sqlite3 shell32 propsys ole32 normaliz)
+target_compile_options(test_scan PRIVATE /UNDEBUG) # see the note on test_core
 
 # ------------------------------------------------------------------ installer
 # `cpack -G NSIS -C Release` in build/ produces KaraokeDJ-<ver>-win64.exe:

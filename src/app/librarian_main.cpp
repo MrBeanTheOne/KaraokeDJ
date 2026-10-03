@@ -406,8 +406,9 @@ int wmain(int argc, wchar_t** argv) {
         for (size_t i = 1; i < args.size(); ++i) {
             wprintf(L"scanning %ls\n", args[i].c_str());
             const ScanStats st = scanDirectory(db, args[i]);
-            wprintf(L"  seen=%d added=%d updated=%d unchanged=%d unsupported=%d\n",
-                    st.seen, st.added, st.updated, st.unchanged, st.unsupported);
+            wprintf(L"  seen=%d added=%d updated=%d unchanged=%d unsupported=%d "
+                    L"moved=%d\n", st.seen, st.added, st.updated, st.unchanged,
+                    st.unsupported, st.moved);
         }
         return 0;
     }

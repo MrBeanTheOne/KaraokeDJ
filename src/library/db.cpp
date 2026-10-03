@@ -131,6 +131,12 @@ bool Db::open(const std::wstring& path) {
     // hidden=1: excluded from search/browse/phone requests (broken versions);
     // restorable from the sidebar's Excluded view.
     exec("ALTER TABLE media_item ADD COLUMN hidden INTEGER DEFAULT 0;");
+    // Lookups by media_id (and the FK checks on every media_item DELETE):
+    // without these, folding 4000 moved files back held the write lock ~5 s,
+    // past the UI's 3 s busy timeout. Measured 4.9 s -> 0.1 s.
+    exec("CREATE INDEX IF NOT EXISTS idx_pl_media ON playlist_item(media_id);"
+         "CREATE INDEX IF NOT EXISTS idx_sq_media ON singer_queue_item(media_id);"
+         "CREATE INDEX IF NOT EXISTS idx_hist_media ON play_history(media_id);");
     exec("UPDATE media_item SET search_f = fold(COALESCE(title,'')) || "
          "char(10) || fold(COALESCE(artist,'')) || char(10) || fold(path) "
          "WHERE search_f IS NULL;");

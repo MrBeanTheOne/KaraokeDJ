@@ -5,6 +5,12 @@
 // Split out of kdj_ui.cpp.
 
 void cleanMissingFiles(App& a) {
+    // A running scan ends by folding moved files back into their old rows —
+    // exactly the rows that look "missing" right now.
+    if (a.scanning.load()) {
+        a.status = L"library scan running — clean missing files after it ends";
+        return;
+    }
     std::vector<int64_t> gone;
     {
         Db::Stmt q;
@@ -33,24 +39,36 @@ void cleanMissingFiles(App& a) {
 void performCleanMissing(App& a) {
     const std::vector<int64_t> gone = std::move(a.confirmIds);
     a.confirmIds.clear();
-    a.db.exec("BEGIN");
-    for (const int64_t id : gone) {
-        Db::Stmt d1;
-        a.db.prepare(d1, "DELETE FROM playlist_item WHERE media_id=?1");
-        d1.bind(1, id);
-        d1.step();
-        Db::Stmt d2;
-        a.db.prepare(d2, "DELETE FROM singer_queue_item WHERE media_id=?1");
-        d2.bind(1, id);
-        d2.step();
-        Db::Stmt d3;
-        a.db.prepare(d3, "DELETE FROM media_item WHERE id=?1");
-        d3.bind(1, id);
-        d3.step();
+    if (a.scanning.load()) { // a scan started while the dialog was open
+        a.status = L"library scan running — nothing removed, try after it ends";
+        return;
     }
-    a.db.exec("COMMIT");
+    bool ok = a.db.exec("BEGIN");
+    int removed = 0;
+    for (const int64_t id : gone) {
+        { // Look again: a scan since the dialog opened may have re-pointed
+          // this row at its moved file — it now holds the user's data.
+            Db::Stmt q;
+            a.db.prepare(q, "SELECT path FROM media_item WHERE id=?1");
+            q.bind(1, id);
+            if (!q.step() ||
+                GetFileAttributesW(wide(q.colText(0)).c_str()) != INVALID_FILE_ATTRIBUTES)
+                continue;
+        }
+        for (const char* sql : {"DELETE FROM playlist_item WHERE media_id=?1",
+                                "DELETE FROM singer_queue_item WHERE media_id=?1",
+                                "DELETE FROM media_item WHERE id=?1"}) {
+            Db::Stmt d;
+            ok = ok && a.db.prepare(d, sql);
+            if (ok) ok = d.bind(1, id).run();
+        }
+        if (!ok) break;
+        ++removed;
+    }
+    a.db.exec(ok ? "COMMIT" : "ROLLBACK");
     a.navDirty = a.searchDirty = true;
-    a.status = L"removed " + std::to_wstring(gone.size()) + L" missing entries";
+    a.status = ok ? L"removed " + std::to_wstring(removed) + L" missing entries"
+                  : L"database busy — nothing removed, try again";
 }
 
 // Text-box caret blink (only while a box is focused).

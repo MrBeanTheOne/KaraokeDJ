@@ -121,6 +121,147 @@ struct GentleMode {
 };
 } // namespace
 
+// A file moved inside the library comes back from the walk under a NEW path,
+// so the upsert inserts a fresh row and the old one lingers as a ghost — the
+// user's "reorganised the drive, rescan added 4000 songs". Same size + same
+// mtime (100 ns ticks; moves and Explorer copies keep it) is the same file:
+// fold the fresh row into its ghost so the media_id — playlists, rotation,
+// history, cues, BPM, key, hidden — survives, as relocateFolder does for a
+// whole folder. Library-wide, not just under the scanned root, so a move
+// between two roots is caught and a library that already has the duplicates
+// heals on its next scan. A ghost is only a ghost when its drive is present
+// and the file is not on it (unplugged drives and UNC are never judged — see
+// decisions.md). Both copies present = a real duplicate, left alone.
+// ponytail: stats every row of every same-size+mtime group per scan; fine at
+// ~100k rows, track "rows added this scan" if genuine duplicates explode.
+static int reconcileMoves(Db& db) {
+    struct Row {
+        int64_t id;
+        std::wstring path, artist, title;
+    };
+    struct Pair {
+        int64_t ghost, fresh;
+        std::wstring path, guessArtist, guessTitle;
+    };
+    int driveUp[26] = {}; // 0 unknown, 1 present, -1 absent: one stat per letter
+    auto missing = [&](const std::wstring& p) {
+        if (p.size() < 3 || p[1] != L':' || !iswalpha(p[0])) return false; // UNC
+        int& up = driveUp[towupper(p[0]) - L'A'];
+        if (!up)
+            up = GetFileAttributesW(p.substr(0, 3).c_str()) == INVALID_FILE_ATTRIBUTES
+                     ? -1 : 1;
+        if (up < 0) return false; // drive absent: says nothing about the file
+        if (GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES) return false;
+        // only "not there" is gone; a USB I/O hiccup is not judged
+        const DWORD e = GetLastError();
+        return e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND;
+    };
+    auto fileName = [](const std::wstring& p) {
+        return lowerCopy(p.substr(p.find_last_of(L'\\') + 1));
+    };
+    std::vector<Pair> pairs;
+    auto pairGroup = [&](std::vector<Row>& g) {
+        std::vector<Row> ghosts, fresh;
+        for (Row& r : g)
+            if (missing(r.path)) ghosts.push_back(std::move(r));
+            else fresh.push_back(std::move(r));
+        g.clear();
+        if (ghosts.empty() || fresh.empty()) return;
+        // fresh rows on disk only — stat them once a ghost needs a partner
+        std::erase_if(fresh, [](const Row& r) {
+            return GetFileAttributesW(r.path.c_str()) == INVALID_FILE_ATTRIBUTES;
+        });
+        // The moved file's row was inserted after its ghost (higher id).
+        // Same-name partners first, so a renamed ghost cannot take another
+        // ghost's partner; then the leftovers by newest row.
+        for (const bool sameName : {true, false})
+            for (const Row& gh : ghosts) { // ordered by id
+                int best = -1;
+                for (int i = int(fresh.size()) - 1; i >= 0 && best < 0; --i)
+                    if (fresh[i].id > gh.id &&
+                        (!sameName || fileName(fresh[i].path) == fileName(gh.path)))
+                        best = i;
+                if (best < 0) continue;
+                if (std::any_of(pairs.begin(), pairs.end(),
+                                [&](const Pair& p) { return p.ghost == gh.id; }))
+                    continue; // paired in the same-name pass
+                std::wstring ga, gt; // what the scanner guessed from the old name
+                filenameGuess(fs::path(gh.path), ga, gt);
+                pairs.push_back({gh.id, fresh[best].id, std::move(fresh[best].path),
+                                 ga, gt});
+                fresh.erase(fresh.begin() + best);
+            }
+    };
+    {
+        Db::Stmt q;
+        db.prepare(q, "SELECT m.id, m.path, m.file_size, m.modified_time, "
+                      "IFNULL(m.artist,''), IFNULL(m.title,'') "
+                      "FROM media_item m JOIN (SELECT file_size fs, modified_time mt "
+                      "FROM media_item WHERE file_size>0 GROUP BY 1,2 "
+                      "HAVING COUNT(*)>1) g ON m.file_size=g.fs AND "
+                      "m.modified_time=g.mt ORDER BY 3, 4, 1");
+        std::vector<Row> g;
+        int64_t fs = -1, mt = -1;
+        while (q.step()) {
+            if (q.colInt(2) != fs || q.colInt(3) != mt) {
+                pairGroup(g);
+                fs = q.colInt(2);
+                mt = q.colInt(3);
+            }
+            g.push_back({q.colInt(0), wide(q.colText(1)), wide(q.colText(4)),
+                         wide(q.colText(5))});
+        }
+        pairGroup(g);
+    }
+    if (pairs.empty()) return 0;
+
+    // The ghost keeps its identity (playlists, rotation, history) and the
+    // user's edits; the fresh row contributes the new path, its CDG pairing,
+    // anything the ghost never got (analysis, cues), its title/artist when
+    // the ghost's were only the scanner's guess from the old file name, and
+    // its visibility — a ghost hidden because it would not load must not
+    // take the playable copy out of search with it.
+    static const char* kSql[] = {
+        "UPDATE playlist_item SET media_id=?1 WHERE media_id=?2",
+        "UPDATE singer_queue_item SET media_id=?1 WHERE media_id=?2",
+        "UPDATE play_history SET media_id=?1 WHERE media_id=?2",
+        "UPDATE media_item AS g SET (type, bpm, music_key, duration_ms, genre, "
+        "year, cue_in_ms, cue_out_ms, hidden, artist, title) = "
+        "(SELECT f.type, CASE WHEN IFNULL(g.bpm,0)>0 THEN g.bpm ELSE f.bpm END, "
+        "CASE WHEN IFNULL(g.music_key,0)<>0 THEN g.music_key ELSE f.music_key END, "
+        "CASE WHEN IFNULL(g.duration_ms,0)>0 THEN g.duration_ms ELSE f.duration_ms END, "
+        "COALESCE(g.genre, f.genre), "
+        "CASE WHEN IFNULL(g.year,0)>0 THEN g.year ELSE f.year END, "
+        "CASE WHEN IFNULL(g.cue_in_ms,0)>0 THEN g.cue_in_ms ELSE f.cue_in_ms END, "
+        "CASE WHEN IFNULL(g.cue_out_ms,0)>0 THEN g.cue_out_ms ELSE f.cue_out_ms END, "
+        "MIN(IFNULL(g.hidden,0), IFNULL(f.hidden,0)), "
+        "CASE WHEN IFNULL(g.artist,'')=?4 AND IFNULL(g.title,'')=?5 "
+        "THEN f.artist ELSE g.artist END, "
+        "CASE WHEN IFNULL(g.artist,'')=?4 AND IFNULL(g.title,'')=?5 "
+        "THEN f.title ELSE g.title END "
+        "FROM media_item f WHERE f.id=?2) WHERE g.id=?1",
+        "DELETE FROM media_item WHERE id=?2", // frees the UNIQUE path
+        "UPDATE media_item SET path=?3, search_f=fold(COALESCE(title,''))||"
+        "char(10)||fold(COALESCE(artist,''))||char(10)||fold(?3) WHERE id=?1",
+    };
+    bool ok = db.exec("BEGIN;");
+    for (const Pair& p : pairs) {
+        for (const char* sql : kSql) {
+            Db::Stmt s;
+            ok = ok && db.prepare(s, sql);
+            if (!ok) break;
+            // unused parameters just fail to bind (SQLITE_RANGE, ignored)
+            s.bind(1, p.ghost).bind(2, p.fresh).bind(3, utf8(p.path));
+            s.bind(4, utf8(p.guessArtist)).bind(5, utf8(p.guessTitle));
+            ok = s.run();
+        }
+        if (!ok) break;
+    }
+    // all or nothing: a half-merged pair would strand a playlist entry
+    db.exec(ok ? "COMMIT;" : "ROLLBACK;");
+    return ok ? int(pairs.size()) : 0;
+}
+
 ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
                         bool readFileTags) {
     ScanStats st;
@@ -290,5 +431,6 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
     }
     db.exec("COMMIT;");
     for (auto& t : workers) t.join();
+    if (!cancelled && !prog->cancel.load()) st.moved = reconcileMoves(db);
     return st;
 }
