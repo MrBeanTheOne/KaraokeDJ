@@ -420,6 +420,44 @@ void queueRescan(App& a, const std::wstring& folder) {
     a.rescanQueue.push_back(folder);
 }
 
+// CLEAN MISSING FILES, step 1: find the rows whose file is gone. One stat per
+// row froze the UI for minutes on a USB/NAS library, so the walk runs on its
+// own thread + connection; the main loop opens the confirm when cleanDone
+// lands. Judged by presentOnDisk's rule: only a drive-letter path whose drive
+// is mounted — a missing drive or a UNC path is a fact about the MACHINE.
+void cleanMissingFiles(App& a) {
+    // A running scan ends by folding moved files back into their old rows —
+    // exactly the rows that look "missing" right now.
+    if (a.scanning.load()) {
+        a.status = L"library scan running — clean missing files after it ends";
+        return;
+    }
+    if (a.cleanBusy.load()) return; // one walk at a time
+    if (a.cleanThread.joinable()) a.cleanThread.join();
+    a.cleanBusy.store(true);
+    a.status = L"checking library files…";
+    const std::wstring dbPath = a.dbPath;
+    const uint32_t mask = a.driveMask;
+    a.cleanThread = std::thread([&a, dbPath, mask]() {
+        std::vector<int64_t> gone;
+        Db db;
+        if (db.open(dbPath)) {
+            Db::Stmt q;
+            db.prepare(q, "SELECT id, path FROM media_item");
+            while (q.step()) {
+                const std::wstring p = wide(q.colText(1));
+                if (p.size() < 3 || p[1] != L':') continue; // UNC: never judged
+                if (pathOffline(p, mask)) continue;         // drive unplugged
+                if (GetFileAttributesW(p.c_str()) == INVALID_FILE_ATTRIBUTES)
+                    gone.push_back(q.colInt(0));
+            }
+        }
+        a.cleanGone = std::move(gone);
+        a.cleanBusy.store(false);
+        a.cleanDone.store(true);
+    });
+}
+
 void rescanAll(App& a) {
     Db::Stmt q;
     a.db.prepare(q, "SELECT path FROM scan_root ORDER BY path");

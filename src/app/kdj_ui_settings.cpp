@@ -4,37 +4,8 @@
 // phone requests, YouTube, and the waiting-screen designer.
 // Split out of kdj_ui.cpp.
 
-void cleanMissingFiles(App& a) {
-    // A running scan ends by folding moved files back into their old rows —
-    // exactly the rows that look "missing" right now.
-    if (a.scanning.load()) {
-        a.status = L"library scan running — clean missing files after it ends";
-        return;
-    }
-    std::vector<int64_t> gone;
-    {
-        Db::Stmt q;
-        a.db.prepare(q, "SELECT id, path FROM media_item");
-        while (q.step()) {
-            const std::wstring p = wide(q.colText(1));
-            if (p.size() >= 3 && p[1] == L':' &&
-                GetFileAttributesW(p.substr(0, 3).c_str()) == INVALID_FILE_ATTRIBUTES)
-                continue; // whole drive absent: skip
-            if (GetFileAttributesW(p.c_str()) == INVALID_FILE_ATTRIBUTES)
-                gone.push_back(q.colInt(0));
-        }
-    }
-    if (gone.empty()) {
-        a.status = L"no missing files in the library";
-        return;
-    }
-    a.confirmIds = std::move(gone);
-    askConfirm(a, App::ConfirmAction::CleanMissing, L"CLEAN MISSING FILES",
-               std::to_wstring(a.confirmIds.size()) +
-                   L" entries point at files that no longer exist.",
-               L"Their playlist / rotation entries go too. Files on disk are "
-               L"not touched.");
-}
+// cleanMissingFiles lives in kdj_jobs.cpp: the per-file stats run on a
+// background thread, and the main loop opens the confirm when they land.
 
 void performCleanMissing(App& a) {
     const std::vector<int64_t> gone = std::move(a.confirmIds);
@@ -47,12 +18,15 @@ void performCleanMissing(App& a) {
     int removed = 0;
     for (const int64_t id : gone) {
         { // Look again: a scan since the dialog opened may have re-pointed
-          // this row at its moved file — it now holds the user's data.
+          // this row at its moved file — it now holds the user's data. And a
+          // drive unplugged since the walk makes the row unjudgeable, not gone.
             Db::Stmt q;
             a.db.prepare(q, "SELECT path FROM media_item WHERE id=?1");
             q.bind(1, id);
-            if (!q.step() ||
-                GetFileAttributesW(wide(q.colText(0)).c_str()) != INVALID_FILE_ATTRIBUTES)
+            if (!q.step()) continue;
+            const std::wstring p = wide(q.colText(0));
+            if (pathOffline(p, a.driveMask) ||
+                GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES)
                 continue;
         }
         for (const char* sql : {"DELETE FROM playlist_item WHERE media_id=?1",

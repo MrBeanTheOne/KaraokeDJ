@@ -359,6 +359,13 @@ struct App {
     std::wstring updFile;   // downloaded installer ("" = download failed)
     bool updRestart = false; // quitting to run the installer
 
+    // CLEAN MISSING FILES: the per-file stats run off the UI thread (a big
+    // library on a USB/NAS drive is minutes of GetFileAttributesW). The main
+    // loop opens the confirm dialog when the walk lands.
+    std::thread cleanThread;
+    std::atomic<bool> cleanBusy{false}, cleanDone{false};
+    std::vector<int64_t> cleanGone; // worker writes, main reads after cleanDone
+
     // YouTube download (yt-dlp.exe beside the app or on PATH)
     std::thread ytThread;
     std::atomic<bool> ytBusy{false}, ytDone{false};

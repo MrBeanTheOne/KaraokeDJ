@@ -692,6 +692,21 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             a.searchDirty = true;
             a.status = L"BPM analysis complete";
         }
+        if (a.cleanDone.exchange(false)) { // missing-file walk landed
+            if (a.cleanThread.joinable()) a.cleanThread.join();
+            if (a.cleanGone.empty()) {
+                a.status = L"no missing files in the library";
+            } else {
+                a.confirmIds = std::move(a.cleanGone);
+                askConfirm(a, App::ConfirmAction::CleanMissing,
+                           L"CLEAN MISSING FILES",
+                           std::to_wstring(a.confirmIds.size()) +
+                               L" entries point at files that no longer exist.",
+                           L"Their playlist / rotation entries go too. Files "
+                           L"on disk are not touched.");
+            }
+            a.cleanGone.clear();
+        }
         if (a.updDlDone.exchange(false)) { // in-app update: installer is down
             if (a.updDlThread.joinable()) a.updDlThread.join();
             if (!a.updFile.empty() &&
@@ -898,6 +913,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.bpmThread.joinable()) a.bpmThread.join();
         if (a.updThread.joinable()) a.updThread.join();
         if (a.updDlThread.joinable()) a.updDlThread.join();
+        if (a.cleanThread.joinable()) a.cleanThread.join();
         stopWatcher(a);
         a.web.stop();
         if (a.ytThread.joinable()) a.ytThread.join();
