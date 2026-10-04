@@ -68,6 +68,9 @@ Settings) and points you at the download when one exists.
   each moved song is recognised as the same track, not added again, and
   keeps its playlists, history, cues, BPM and key. Real duplicate copies
   stay separate.
+- **Clean missing files** sweeps out library entries whose file is truly gone
+  — it checks in the background (no freeze, even on a NAS), never judges a
+  drive that is merely unplugged, and asks before deleting anything.
 - Accent- and case-insensitive search ("demo" finds "DÉMO").
 - **Unplugged drive? Its tracks grey out** and refuse to be queued or loaded,
   so nothing fails mid-gig. They come back by themselves when the drive
