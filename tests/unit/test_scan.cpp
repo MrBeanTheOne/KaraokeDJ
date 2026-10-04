@@ -64,6 +64,19 @@ int main() {
         assert(scanDirectory(db, dir.wstring(), nullptr, false).moved == 1);
         assert(one(db, "SELECT id FROM media_item WHERE title='Y' AND hidden=0") == x);
         assert(one(db, "SELECT COUNT(*) FROM media_item") == 4);
+
+        // Rescanning a subfolder of an imported root must not register a
+        // second root: the subtree showed twice and removing either copy
+        // deleted the shared rows. A new parent root absorbs nested roots.
+        registerScanRoot(db, dir.wstring());
+        registerScanRoot(db, (dir / L"New").wstring());
+        registerScanRoot(db, dir.wstring());
+        assert(one(db, "SELECT COUNT(*) FROM scan_root") == 1);
+        db.exec("DELETE FROM scan_root");
+        registerScanRoot(db, (dir / L"New").wstring());
+        registerScanRoot(db, dir.wstring()); // parent arrives second
+        assert(one(db, "SELECT COUNT(*) FROM scan_root") == 1);
+        assert(one(db, "SELECT COUNT(*) FROM scan_root WHERE path LIKE '%New'") == 0);
     }
     fs::remove_all(dir);
     std::puts("test_scan OK");

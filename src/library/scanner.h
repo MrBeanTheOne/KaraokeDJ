@@ -39,3 +39,10 @@ struct ScanProgress {
 // import — titles come from filenames, durations show 0:00 until a rescan).
 ScanStats scanDirectory(Db& db, const std::wstring& root,
                         ScanProgress* prog = nullptr, bool readFileTags = true);
+
+// Record root in scan_root — unless an existing root already covers it.
+// Rescanning a subfolder of an imported root must NOT make it a root of its
+// own: the subtree then shows twice in the folder tree, and removing either
+// copy deletes the shared rows. A genuinely new root absorbs any old roots
+// nested inside it, for the same reason in the other direction.
+void registerScanRoot(Db& db, const std::wstring& root);

@@ -480,3 +480,26 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
     if (!cancelled && !prog->cancel.load()) st.moved = reconcileMoves(db);
     return st;
 }
+
+void registerScanRoot(Db& db, const std::wstring& root) {
+    const std::string f = utf8(root);
+    {
+        // Covered already (equal to a root, or inside one)? Then it is a
+        // rescan, not an import — leave scan_root alone. BINARY prefix match
+        // via substr, same character-counting rule as relocateFolder.
+        Db::Stmt c;
+        db.prepare(c, "SELECT 1 FROM scan_root WHERE path=?1 OR "
+                      "substr(?1, 1, length(path)+1) = path || '\\'");
+        c.bind(1, f);
+        if (c.step()) return;
+    }
+    Db::Stmt del; // the new root owns its subtree: absorb roots inside it
+    db.prepare(del, "DELETE FROM scan_root WHERE "
+                    "substr(path, 1, length(?1)+1) = ?1 || '\\'");
+    del.bind(1, f);
+    del.run();
+    Db::Stmt in;
+    db.prepare(in, "INSERT INTO scan_root(path) VALUES(?1)");
+    in.bind(1, f);
+    in.run();
+}

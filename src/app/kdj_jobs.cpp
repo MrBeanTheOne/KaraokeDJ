@@ -502,10 +502,7 @@ void startImport(App& a, const std::wstring& folder) {
             Db sdb;
             if (sdb.open(dbPath)) {
                 scanDirectory(sdb, folder, &a.scanProg, tags);
-                Db::Stmt q;
-                sdb.prepare(q, "INSERT OR IGNORE INTO scan_root(path) VALUES(?1)");
-                q.bind(1, utf8(folder));
-                q.step();
+                registerScanRoot(sdb, folder);
             }
         }
         CoUninitialize();
