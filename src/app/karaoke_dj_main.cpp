@@ -609,6 +609,14 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                                  : std::to_wstring(n) + L" tracks now point at " +
                                        a.pickResult;
                     a.relocFrom.clear();
+                } else if (a.pickKind == 7) { // export playlist as .m3u8
+                    a.status = exportPlaylistM3U(a, a.exportPlId, a.pickResult)
+                                   ? L"playlist exported: " +
+                                         leafName(a.pickResult) +
+                                         L" — drop it on another machine's "
+                                         L"Karaoke DJ to import"
+                                   : L"playlist export failed";
+                    a.exportPlId = 0;
                 } else if (a.pickKind == 5) { // YouTube download folder
                     a.ytDir = a.pickResult;
                     setSetting(a.db, "yt_dir", utf8(a.ytDir));

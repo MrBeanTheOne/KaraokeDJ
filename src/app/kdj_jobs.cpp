@@ -2,6 +2,9 @@
 
 #include <winhttp.h>
 
+#include <filesystem>
+namespace fs = std::filesystem;
+
 // Background jobs and blocking OS dialogs: update check, library import,
 // the folder watcher, BPM + musical key analysis, the STA file/folder
 // pickers, profile transfer and YouTube download.
@@ -702,6 +705,148 @@ std::wstring pickProfile(HWND owner, bool save) {
     }
     fd->Release();
     return out;
+}
+
+std::wstring pickM3u(HWND owner, const std::wstring& name) {
+    IFileDialog* fd = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(FileSaveDialog), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&fd))))
+        return L"";
+    static const COMDLG_FILTERSPEC kM3u[] = {{L"M3U playlist", L"*.m3u8"}};
+    fd->SetFileTypes(1, kM3u);
+    fd->SetDefaultExtension(L"m3u8");
+    fd->SetFileName(name.empty() ? L"playlist" : name.c_str());
+    DWORD opts = 0;
+    fd->GetOptions(&opts);
+    fd->SetOptions(opts | FOS_FORCEFILESYSTEM);
+    std::wstring out;
+    if (SUCCEEDED(fd->Show(owner))) {
+        IShellItem* it = nullptr;
+        if (SUCCEEDED(fd->GetResult(&it))) {
+            PWSTR p = nullptr;
+            if (SUCCEEDED(it->GetDisplayName(SIGDN_FILESYSPATH, &p))) {
+                out = p;
+                CoTaskMemFree(p);
+            }
+            it->Release();
+        }
+    }
+    fd->Release();
+    return out;
+}
+
+bool exportPlaylistM3U(App& a, int64_t plId, const std::wstring& file) {
+    Db::Stmt q;
+    if (!a.db.prepare(q, "SELECT m.path, m.artist, m.title, m.duration_ms "
+                         "FROM playlist_item pi JOIN media_item m "
+                         "ON m.id = pi.media_id WHERE pi.playlist_id=?1 "
+                         "ORDER BY pi.position"))
+        return false;
+    q.bind(1, plId);
+    std::string out = "#EXTM3U\n"; // .m3u8 = this body in UTF-8
+    while (q.step()) {
+        const std::string artist = q.colText(1), title = q.colText(2);
+        out += "#EXTINF:" + std::to_string(q.colInt(3) / 1000) + "," +
+               (artist.empty() ? title : artist + " - " + title) + "\n";
+        out += q.colText(0) + "\n";
+    }
+    const HANDLE h = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
+                                 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    DWORD n = 0;
+    const bool ok = WriteFile(h, out.data(), DWORD(out.size()), &n, nullptr) &&
+                    n == out.size();
+    CloseHandle(h);
+    return ok;
+}
+
+// A line's library row: exact path first; else the same file name anywhere in
+// the library, which is what makes a list portable across drive letters.
+static int64_t resolveM3uLine(Db& db, const std::wstring& path) {
+    Db::Stmt q;
+    db.prepare(q, "SELECT id FROM media_item WHERE path=?1 LIMIT 1");
+    q.bind(1, utf8(path));
+    if (q.step()) return q.colInt(0);
+    const std::wstring leaf = leafName(path);
+    if (leaf.empty()) return 0;
+    std::string pat = "%\\"; // escape LIKE wildcards living in file names
+    for (const char c : utf8(leaf)) {
+        if (c == '%' || c == '_' || c == '!') pat += '!';
+        pat += c;
+    }
+    Db::Stmt l;
+    db.prepare(l, "SELECT id FROM media_item WHERE path LIKE ?1 ESCAPE '!' "
+                  "AND IFNULL(hidden,0)=0 AND type<>'unsupported' LIMIT 1");
+    l.bind(1, pat);
+    return l.step() ? l.colInt(0) : 0;
+}
+
+bool importPlaylistM3U(App& a, const std::wstring& file, int* matched,
+                       int* total) {
+    std::string body;
+    {
+        const HANDLE h = CreateFileW(file.c_str(), GENERIC_READ,
+                                     FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                     FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) return false;
+        LARGE_INTEGER sz{};
+        GetFileSizeEx(h, &sz);
+        if (sz.QuadPart > 16 << 20) { CloseHandle(h); return false; }
+        body.resize(size_t(sz.QuadPart));
+        DWORD n = 0;
+        const bool ok = ReadFile(h, body.data(), DWORD(body.size()), &n, nullptr);
+        CloseHandle(h);
+        if (!ok) return false;
+    }
+    if (body.rfind("\xEF\xBB\xBF", 0) == 0) body.erase(0, 3); // UTF-8 BOM
+    const std::wstring dir = fs::path(file).parent_path().wstring();
+
+    // Name the playlist after the file; "name (2)" when that name is taken.
+    const std::wstring stem = fs::path(file).stem().wstring();
+    int64_t plId = 0;
+    for (int suffix = 1; suffix < 100 && !plId; ++suffix) {
+        const std::wstring name =
+            suffix == 1 ? stem : stem + L" (" + std::to_wstring(suffix) + L")";
+        Db::Stmt ex; // probe first: lastId() after a no-op conflict is stale
+        a.db.prepare(ex, "SELECT 1 FROM playlist WHERE name=?1");
+        ex.bind(1, utf8(name));
+        if (ex.step()) continue;
+        Db::Stmt mk;
+        a.db.prepare(mk, "INSERT INTO playlist(name, created_at, updated_at) "
+                         "VALUES(?1, strftime('%s','now'), strftime('%s','now'))");
+        mk.bind(1, utf8(name));
+        if (mk.run()) plId = a.db.lastId();
+    }
+    if (!plId) return false;
+
+    int hits = 0, lines = 0, pos = 0;
+    Db::Stmt add;
+    a.db.exec("BEGIN;");
+    for (size_t at = 0; at < body.size();) {
+        size_t e = body.find('\n', at);
+        if (e == std::string::npos) e = body.size();
+        std::string ln = body.substr(at, e - at);
+        at = e + 1;
+        while (!ln.empty() && (ln.back() == '\r' || ln.back() == ' ')) ln.pop_back();
+        if (ln.empty() || ln[0] == '#') continue;
+        ++lines;
+        std::wstring p = wide(ln);
+        for (auto& c : p)
+            if (c == L'/') c = L'\\'; // lists written elsewhere
+        if (!fs::path(p).is_absolute() && !dir.empty()) p = dir + L"\\" + p;
+        const int64_t id = resolveM3uLine(a.db, p);
+        if (!id) continue;
+        ++hits;
+        a.db.prepare(add, "INSERT INTO playlist_item(playlist_id,media_id,"
+                          "position) VALUES(?1,?2,?3)");
+        add.bind(1, plId).bind(2, id).bind(3, int64_t(++pos));
+        add.run();
+    }
+    a.db.exec("COMMIT;");
+    if (matched) *matched = hits;
+    if (total) *total = lines;
+    a.navDirty = a.searchDirty = true;
+    return true;
 }
 
 std::wstring pickFolder(HWND owner) {

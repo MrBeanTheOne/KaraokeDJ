@@ -235,7 +235,11 @@ struct App {
     bool idleBgLoaded = false;
     std::vector<std::wstring> idleSingerLines; // next singers (reloadNav)
     bool idleEditorOpen = false; // WAITING SCREEN section expanded
-    int pickKind = 0; // pickThread routing: 0 import folder, 1 logo, 2 bg
+    int pickKind = 0; // pickThread routing: 0 import folder, 1 logo, 2 bg,
+                      // 3/4 profile save/open, 5 yt dir, 6 relocate,
+                      // 7 playlist .m3u8 save
+    int64_t exportPlId = 0;      // playlist being exported (pickKind 7)
+    std::wstring exportPlName;   // its name: the save dialog's default file
     bool scanTags = true;     // read file tags during import (scan_tags)
     std::string audioDevice;  // pinned output endpoint id, "" = default
     std::vector<std::pair<std::wstring, std::wstring>> audioDevs; // id, name
@@ -502,6 +506,15 @@ bool exportProfile(App& a, const std::wstring& file);
 // an afternoon. Both are optional.
 bool importProfile(App& a, const std::wstring& file, int* matched = nullptr,
                    int* total = nullptr);
+std::wstring pickM3u(HWND owner, const std::wstring& name); // .m3u8 save
+// Standard #EXTM3U with absolute paths: plays in VLC, re-imports here.
+bool exportPlaylistM3U(App& a, int64_t plId, const std::wstring& file);
+// Drop an .m3u/.m3u8 on the window: new playlist named after the file.
+// Lines resolve by exact path first, then by file name — so a list exported
+// on a machine whose library lives on B:\ still matches the same songs on a
+// laptop that scanned them from another drive letter.
+bool importPlaylistM3U(App& a, const std::wstring& file, int* matched = nullptr,
+                       int* total = nullptr);
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
 std::wstring youtubeCacheDir(const std::wstring& custom = L"");
 void startYoutube(App& a, std::wstring url);

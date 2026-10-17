@@ -313,7 +313,7 @@ void addToPlaylistDb(App& a, int64_t playlistId, const Match& m) {
 void handleMenu(App& a, HWND hwnd) {
     const MenuReq req = a.menu;
     a.menu = {};
-    if (req.index <= -2 && req.index >= -8) { // folder/image/profile pickers
+    if (req.index <= -2 && req.index >= -9) { // folder/image/profile pickers
         if (a.pickThread.joinable()) return; // picker already open
         a.pickKind = req.index == -3   ? 1
                      : req.index == -4 ? 2
@@ -321,6 +321,7 @@ void handleMenu(App& a, HWND hwnd) {
                      : req.index == -6 ? 4   // import profile (open)
                      : req.index == -7 ? 5   // youtube download folder
                      : req.index == -8 ? 6   // relocate a moved folder
+                     : req.index == -9 ? 7   // export playlist .m3u8 (save)
                                        : 0;
         const int kind = a.pickKind;
         a.pickThread = std::thread([&a, hwnd, kind]() {
@@ -328,6 +329,7 @@ void handleMenu(App& a, HWND hwnd) {
             a.pickResult = kind == 0 || kind == 5 || kind == 6 ? pickFolder(hwnd)
                            : kind == 3 ? pickProfile(hwnd, true)
                            : kind == 4 ? pickProfile(hwnd, false)
+                           : kind == 7 ? pickM3u(hwnd, a.exportPlName)
                                        : pickFile(hwnd);
             CoUninitialize();
             a.pickDone.store(true);
@@ -578,9 +580,16 @@ void handleMenu(App& a, HWND hwnd) {
         cleanMissingFiles(a);
     } else if (req.kind == MenuReq::PlaylistRow && req.plId >= 0) {
         const int sel = showMenu(hwnd, a.uiScale, req.x, req.y,
-                                 {L"Queue all", L"Delete playlist"});
+                                 {L"Queue all", L"Export .m3u8…",
+                                  L"Delete playlist"});
         if (sel == 0) queueAllPlaylist(a, req.plId);
         else if (sel == 1) {
+            a.exportPlId = req.plId;
+            a.exportPlName.clear();
+            for (auto& [n, id] : a.playlists)
+                if (id == req.plId) a.exportPlName = n;
+            a.menu = {MenuReq::None, -9}; // STA save dialog after this frame
+        } else if (sel == 2) {
             std::wstring name;
             for (auto& [n, id] : a.playlists)
                 if (id == req.plId) name = n;
@@ -621,6 +630,22 @@ void dropExternal(App& a, float x, float y, const std::vector<std::wstring>& fil
         if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)) {
             startImport(a, f); // a dropped folder is an import
             continue;
+        }
+        if (hasExt(f, L".m3u") || hasExt(f, L".m3u8")) { // playlist import
+            int matched = 0, total = 0;
+            if (!importPlaylistM3U(a, f, &matched, &total)) {
+                a.status = L"couldn't read that playlist file";
+            } else {
+                wchar_t m[160];
+                swprintf(m, 160,
+                         L"playlist imported — %d of %d tracks matched%ls",
+                         matched, total,
+                         matched < total ? L" (unmatched songs aren't in this "
+                                           L"library — import their folder first)"
+                                         : L"");
+                a.status = m;
+            }
+            return; // a playlist drop is its own gesture, not a queue drop
         }
         const Match m = matchFromPath(a, f);
         if (hit(a.rcDeck[0], x, y) && first) dropOnDeck(a, 0, m);

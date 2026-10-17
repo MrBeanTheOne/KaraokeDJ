@@ -80,6 +80,11 @@ Settings) and points you at the download when one exists.
   time, **key**, **date added**) — right-click the header to choose what
   shows. Click ADDED to see your newest imports first; tracks that predate
   the column show the file's date from the drive.
+- **Playlists travel between machines**: right-click a playlist → Export
+  .m3u8 (plays in VLC too), then drop the file onto Karaoke DJ on the other
+  machine to import it. Songs are matched by file name when drive letters
+  differ, so a list built against `B:\` finds the same songs on a laptop's
+  external drive.
 - Playlists with drag-reorder, played-tonight dots, and **multi-select
   everywhere** — browser and queue: shift/ctrl-click several tracks, then
   drag or right-click to queue, playlist or rotation them all at once, remove
