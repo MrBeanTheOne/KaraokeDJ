@@ -545,8 +545,17 @@ void drawQueue(App& a, Ui& ui, const D2D1_RECT_F& r) {
     wchar_t qh[32];
     swprintf(qh, 32, L"QUEUE (%zu)", a.queue.size());
     ui.text(rc(r.left + 14, r.top + 8, // clipped: never collides with buttons
-               (std::max)(0.f, (r.right - r.left) - 218 - 22), 26),
+               (std::max)(0.f, (r.right - r.left) - 314 - 22), 26),
             qh, 12, cDim, 0, true);
+    // Arm the night: until this is on, the queue is only a list you build —
+    // nothing auto-loads onto the decks and nothing auto-starts.
+    if (ui.toggle(307, rc(r.right - 314, r.top + 8, 90, 26), L"AUTOQUEUE",
+                  a.autoQueueOn, cGreen)) {
+        a.autoQueueOn = !a.autoQueueOn;
+        a.status = a.autoQueueOn
+                       ? L"autoqueue ON — the queue feeds the decks"
+                       : L"autoqueue OFF — decks are loaded manually";
+    }
     if (ui.toggle(305, rc(r.right - 218, r.top + 8, 48, 26), L"",
                   a.repeatOn, cGreen))
         a.repeatOn = !a.repeatOn; // repeat: finished tracks rejoin the tail

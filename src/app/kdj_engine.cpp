@@ -558,7 +558,7 @@ void engineTick(App& a) {
                        a.label[idle];
             clearDeckSlot(a, idle);
         }
-        if (a.label[idle].empty() && !a.queue.empty()) {
+        if (a.autoQueueOn && a.label[idle].empty() && !a.queue.empty()) {
             const Match m = a.queue.front();
             a.queue.pop_front();
             if (a.selQueue >= 0) --a.selQueue;
@@ -580,7 +580,10 @@ void engineTick(App& a) {
             // successor (crossfades into a fresh load of itself).
             const bool selfRepeat =
                 !cued && a.queue.empty() && a.repeatOn && !a.label[act].empty();
-            if (cued || !a.queue.empty() || selfRepeat) {
+            // AUTOQUEUE off: the queue never feeds a deck by itself, but a
+            // track someone cued on the other deck still mixes in (automix's
+            // actual job is between the two decks).
+            if (cued || (a.autoQueueOn && !a.queue.empty()) || selfRepeat) {
                 double rem = a.decks[act]->remainingSec();
                 bool trigger = a.decks[act]->eos.load();
                 if (a.cueOut[act] > 0) { // manual END marker wins
@@ -607,7 +610,7 @@ void engineTick(App& a) {
                 }
             }
         } else { // nothing playing: auto-start a queue-cued deck (manual cues wait)
-            for (int d = 0; d < 2; ++d) {
+            for (int d = 0; d < 2 && a.autoQueueOn; ++d) {
                 if (a.autoCued[d] && !a.label[d].empty() &&
                     a.decks[d]->state() == DeckState::Ready) {
                     a.pendingFade = d;
@@ -675,6 +678,10 @@ void engineTick(App& a) {
 
     // Auto gain: once the waveform scan has measured a track's loudness,
     // trim the deck toward a common level. Applied under the user's slider.
+    // A deck that is still silent (preloaded cue) snaps straight to the trim,
+    // so the track STARTS at the right level. A deck already audible ramps
+    // there instead: on a manual start the scan lands a second into the song,
+    // and storing the trim in one step was an audible volume drop.
     for (int d = 0; d < 2; ++d) {
         if (a.gainSet[d] || a.label[d].empty()) continue;
         const float loud = a.wave[d].loudness();
@@ -684,8 +691,19 @@ void engineTick(App& a) {
             constexpr float kTargetRms = 0.18f; // ~-15 dBFS in the loud parts
             g = std::clamp(kTargetRms / loud, 0.4f, 2.0f); // -8..+6 dB
         }
-        a.mixer.autoGain[d].store(g);
+        a.gainTarget[d] = g;
         a.gainSet[d] = true;
+        if (!a.decks[d]->playing.load()) a.mixer.autoGain[d].store(g);
+    }
+    for (int d = 0; d < 2; ++d) { // ramp: ~0.02/tick ≈ full -8 dB trim in 1 s
+        if (!a.gainSet[d]) continue;
+        const float cur = a.mixer.autoGain[d].load();
+        const float tgt = a.gainTarget[d];
+        if (cur == tgt) continue;
+        const float step = 0.02f;
+        a.mixer.autoGain[d].store(
+            std::abs(tgt - cur) <= step ? tgt
+                                        : cur + (tgt > cur ? step : -step));
     }
     if (a.fullOut && !a.fullOut->pump()) { a.fullOut.reset(); a.outMonitor = -1; }
     if (a.db.takeBusy()) // a write timed out on the busy handler: say so

@@ -79,9 +79,9 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
     if (ui.toggle(603, rc(x, y, 300, 28), L"AUTO GAIN (LEVEL TRACKS)", a.autoGainOn,
                   cGreen)) {
         a.autoGainOn = !a.autoGainOn;
-        for (int d = 0; d < 2; ++d) a.gainSet[d] = false; // re-apply live decks
-        if (!a.autoGainOn)
-            for (int d = 0; d < 2; ++d) a.mixer.autoGain[d].store(1.f);
+        // re-evaluated next tick: audible decks RAMP to the new trim (or back
+        // to 1.0 when switched off) instead of stepping there audibly
+        for (int d = 0; d < 2; ++d) a.gainSet[d] = false;
     }
     ui.text(rc(x + 310, y, w - 310, 28),
             L"trims every track toward the same loudness", 10, cDim, 0, false);

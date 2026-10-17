@@ -127,6 +127,11 @@ struct App {
                               // the OTHER deck (VDJ handover feel)
     double fadeSec = 3.0;
     bool automixOn = true; // off = hard cut at end of track (queue continues)
+    // AUTOQUEUE (queue drawer): only when armed does the queue feed the decks
+    // (preload + end-of-track pull + auto-start). Off, the queue is just a
+    // list being built; AUTOMIX still mixes between the two decks when one is
+    // cued. Deliberately NOT persisted: every night starts in manual control.
+    bool autoQueueOn = false;
     bool repeatOn = false; // finished tracks rejoin the queue tail
     MixMode mixMode = MixMode::Fade;
     uint64_t lastFades = 0;
@@ -210,9 +215,13 @@ struct App {
     std::vector<HistRow> history;
     std::set<int64_t> playedTonight; // green dot in the browser
 
-    // Auto gain: per-deck trim from measured loudness (setting auto_gain)
+    // Auto gain: per-deck trim from measured loudness (setting auto_gain).
+    // The trim is ramped toward gainTarget while a deck is audible — the scan
+    // lands moments after a manual start, and snapping there was heard as a
+    // volume drop right after the song began.
     bool autoGainOn = true;
     bool gainSet[2] = {false, false};
+    float gainTarget[2] = {1.f, 1.f};
 
     // Settings window (separate top-level window; main.cpp owns it)
     HWND settingsWnd = nullptr;

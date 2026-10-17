@@ -30,6 +30,10 @@ Settings) and points you at the download when one exists.
 ### 🎛️ Two decks, zero babysitting
 - Automix with configurable fade length, or mix by hand — crossfader fills
   blue (deck A) / red (deck B) from center.
+- **AUTOQUEUE is the arm switch for the night** (queue drawer): until you
+  press it, the queue is just a list you build — nothing auto-loads onto the
+  decks and nothing starts by itself. Press it and the queue feeds both decks
+  continuously; automix keeps mixing between the decks either way.
 - **Hardware video decode** (Media Foundation + D3D11): smooth video karaoke
   on a weak laptop CPU.
 - Plays **MP3+G** (mp3/cdg pairs), **karaoke ZIPs**, **video files**, plain
@@ -45,7 +49,8 @@ Settings) and points you at the download when one exists.
   move them, or let smart automix skip silent intros and outros. Saved per
   track.
 - **Auto volume leveling** — loudness is measured per track and matched, so
-  nobody gets blasted between songs.
+  nobody gets blasted between songs. The trim eases in smoothly on a track
+  that's already playing, so a song never starts loud and then visibly drops.
 - **BPM and musical key everywhere**: BPM read from tags on import; both
   detected in the background for everything else, in a single pass per track.
   The analysis runs several tracks at once and **stands down completely while
