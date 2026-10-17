@@ -5,13 +5,13 @@
 std::vector<Match> searchMedia(Db& db, const std::wstring& term, int limit,
                                const std::wstring& pathPrefix, int sortCol,
                                bool sortAsc, bool hidden) {
-    static const char* kCols[] = {"artist", "title",       "genre", "year",
-                                  "bpm",    "duration_ms", "music_key"};
+    static const char* kCols[] = {"artist", "title",       "genre",     "year",
+                                  "bpm",    "duration_ms", "music_key", "added_at"};
     if (sortCol < 0 || sortCol >= int(sizeof(kCols) / sizeof(*kCols))) sortCol = 0;
     const std::string folded = utf8(foldW(term));
     std::string sql = // fold() = case- and accent-insensitive ("eglise" finds "Église")
         "SELECT id,artist,title,path,type,duration_ms,genre,year,bpm,"
-        "IFNULL(music_key,0) FROM media_item "
+        "IFNULL(music_key,0),IFNULL(added_at,0) FROM media_item "
         "WHERE type IN ('audio','mp3g','video','karaoke_zip') AND path LIKE ?3 ";
     sql += hidden ? "AND hidden=1 " : "AND IFNULL(hidden,0)=0 ";
     if (!folded.empty()) // pre-folded text: one LIKE scan, no fold() calls
@@ -40,6 +40,7 @@ std::vector<Match> searchMedia(Db& db, const std::wstring& term, int limit,
         m.year = q.colInt(7);
         m.bpm = q.colInt(8);
         m.musicKey = q.colInt(9);
+        m.addedAt = q.colInt(10);
         out.push_back(std::move(m));
     }
     return out;

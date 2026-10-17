@@ -11,6 +11,7 @@ struct Match {
     std::wstring artist, title, genre;
     int64_t year = 0, bpm = 0;
     int64_t musicKey = 0; // media_item.music_key (see key_detect.h)
+    int64_t addedAt = 0;  // media_item.added_at (FILETIME 100 ns ticks)
     std::wstring path;
     std::string type; // audio | mp3g | video
     int64_t durMs = 0;
@@ -18,7 +19,8 @@ struct Match {
 
 // Playable library items matching term in title/artist/path; empty term = all.
 // pathPrefix restricts results to one folder subtree when non-empty.
-// sortCol: 0 artist, 1 title, 2 genre, 3 year, 4 bpm, 5 duration.
+// sortCol: 0 artist, 1 title, 2 genre, 3 year, 4 bpm, 5 duration, 6 key,
+// 7 date added.
 // hidden: false = normal library (excluded rows filtered out); true = ONLY
 // the excluded rows (the restore view).
 std::vector<Match> searchMedia(Db& db, const std::wstring& term, int limit = 50,

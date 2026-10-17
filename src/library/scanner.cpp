@@ -438,9 +438,9 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
         Db::Stmt up;
         db.prepare(up,
                    "INSERT INTO media_item(path,type,title,artist,duration_ms,file_size,"
-                   "modified_time,status,genre,year,bpm,search_f) "
+                   "modified_time,status,genre,year,bpm,search_f,added_at) "
                    "VALUES(?1,?2,?3,?4,?5,?6,?7,'ok',?8,?9,?10,"
-                   "fold(?3)||char(10)||fold(?4)||char(10)||fold(?1)) "
+                   "fold(?3)||char(10)||fold(?4)||char(10)||fold(?1),?11) "
                    "ON CONFLICT(path) DO UPDATE SET type=?2,title=?3,artist=?4,"
                    "duration_ms=?5,file_size=?6,modified_time=?7,genre=?8,year=?9,"
                    // only changed files reach this statement, so a file that
@@ -451,6 +451,8 @@ ScanStats scanDirectory(Db& db, const std::wstring& root, ScanProgress* prog,
         up.bind(1, utf8(w.path)).bind(2, w.type).bind(3, utf8(title)).bind(4, utf8(artist));
         up.bind(5, m.durMs).bind(6, w.size).bind(7, w.mtime).bind(9, m.year);
         up.bind(10, m.bpm);
+        // import time, same 100 ns unit as mtime; conflicts keep the original
+        up.bind(11, int64_t(fs::file_time_type::clock::now().time_since_epoch().count()));
         if (readFileTags) up.bind(8, utf8(m.genre));
         else up.bindNull(8); // NULL genre = "rescan once" marker: a later
                              // tags-enabled import fills these rows in

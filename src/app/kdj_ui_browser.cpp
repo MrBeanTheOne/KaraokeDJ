@@ -3,6 +3,18 @@
 // Left sidebar (library / playlists / folders / singers), the track
 // browser and the queue drawer. Split out of kdj_ui.cpp.
 
+// media_item.added_at (FILETIME 100 ns ticks) -> local "YYYY-MM-DD"
+static std::wstring fmtAdded(int64_t ticks) {
+    if (ticks <= 0) return L"";
+    FILETIME ft{DWORD(ticks), DWORD(uint64_t(ticks) >> 32)}, lf;
+    SYSTEMTIME st;
+    if (!FileTimeToLocalFileTime(&ft, &lf) || !FileTimeToSystemTime(&lf, &st))
+        return L"";
+    wchar_t b[16];
+    swprintf(b, 16, L"%04u-%02u-%02u", st.wYear, st.wMonth, st.wDay);
+    return b;
+}
+
 std::vector<std::wstring> folderChildren(const App& a, const std::wstring& dir) {
     std::set<std::wstring> kids;
     const std::wstring prefix = dir + L"\\";
@@ -236,10 +248,11 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
 
     // Column layout from the model: visible columns (colSeq order) share the
     // flexible width by normalized colFrac. Column ids: 0 TITLE 1 ARTIST
-    // 2 GENRE 3 YEAR 4 BPM 5 TIME 6 KEY (sort ids map via kColSort).
+    // 2 GENRE 3 YEAR 4 BPM 5 TIME 6 KEY 7 ADDED (sort ids map via kColSort).
     static const wchar_t* kColName[App::kNumCols] = {
-        L"TITLE", L"ARTIST", L"GENRE", L"YEAR", L"BPM", L"TIME", L"KEY"};
-    static const int kColSort[App::kNumCols] = {1, 0, 2, 3, 4, 5, 6};
+        L"TITLE", L"ARTIST", L"GENRE", L"YEAR",
+        L"BPM",   L"TIME",   L"KEY",   L"ADDED"};
+    static const int kColSort[App::kNumCols] = {1, 0, 2, 3, 4, 5, 6, 7};
     // BPM and TIME are numbers and read right-aligned; everything else left.
     auto colRight = [](int id) { return id == 4 || id == 5; };
     const float listLeft = r.left + 6, listRight = r.right - r.left - 12 + r.left + 6;
@@ -299,7 +312,8 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
             if (a.nav != NavMode::Playlist && a.colDrag < 0 && ui.in.pressed &&
                 hit(hr, ui.in.pressX, ui.in.pressY)) {
                 if (a.sortCol == kColSort[id]) a.sortAsc = !a.sortAsc;
-                else { a.sortCol = kColSort[id]; a.sortAsc = true; }
+                // ADDED starts newest-first: that's what the column is for
+                else { a.sortCol = kColSort[id]; a.sortAsc = kColSort[id] != 7; }
                 a.searchDirty = true;
                 a.libScroll = 0; // new order: back to top
             }
@@ -478,6 +492,7 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
                     ui.text(cell, keyName(int(m.musicKey), 0), 12, cSub, 0,
                             false);
                     break;
+                case 7: ui.text(cell, fmtAdded(m.addedAt), 12, cSub, 0, false); break;
                 }
             }
         }

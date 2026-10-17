@@ -164,16 +164,16 @@ struct App {
     int selCollapse = -1; // plain click inside the selection: collapse to this
                           // row on release, unless the press became a drag
     // Browser columns, indexed by column id:
-    // 0 TITLE 1 ARTIST 2 GENRE 3 YEAR 4 BPM 5 TIME 6 KEY.
+    // 0 TITLE 1 ARTIST 2 GENRE 3 YEAR 4 BPM 5 TIME 6 KEY 7 ADDED.
     // colSeq = display order (values are column ids), colShow = visibility,
     // colFrac = width shares (normalized over the visible set).
     // kCols must grow with this — see loadSettings, which back-fills ids a
     // saved layout from an older build never mentioned.
-    static constexpr int kNumCols = 7;
-    int colSeq[kNumCols] = {0, 1, 2, 3, 4, 6, 5};
-    bool colShow[kNumCols] = {true, true, true, true, true, true, true};
+    static constexpr int kNumCols = 8;
+    int colSeq[kNumCols] = {0, 1, 2, 3, 4, 6, 5, 7};
+    bool colShow[kNumCols] = {true, true, true, true, true, true, true, true};
     float colFrac[kNumCols] = {0.32f, 0.23f, 0.12f, 0.08f,
-                               0.08f, 0.10f, 0.07f};
+                               0.08f, 0.10f, 0.07f, 0.11f};
     int colDrag = -1; // index into the VISIBLE sequence being resized
     float libScroll = 0, queueScroll = 0, sideScroll = 0;
     bool sidebarOpen = true, queueOpen = true;
@@ -198,7 +198,7 @@ struct App {
     int scrubDeck = -1; // deck being waveform-scrubbed
     Clock::time_point lastScrub{};
     int sortCol = 0; // searchMedia kCols: 0 artist 1 title 2 genre 3 year
-                     // 4 bpm 5 duration 6 key
+                     // 4 bpm 5 duration 6 key 7 added
     bool sortAsc = true;
     std::wstring status = L"ready";
 

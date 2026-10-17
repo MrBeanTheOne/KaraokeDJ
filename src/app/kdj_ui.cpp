@@ -262,7 +262,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                                    : 440.f,
                     ph = tags      ? 232.f
                          : reqs    ? 96.f + (std::max)(nReq, 1) * 32.f
-                         : columns ? 322.f
+                         : columns ? 352.f
                                    : 132.f;
         const D2D1_RECT_F p = rc((W - pw) / 2, (H - ph) / 2, pw, ph);
         ui.rect(p, cPanel, 10);
@@ -348,7 +348,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         } else if (columns) {
             static const wchar_t* names[App::kNumCols] = {
                 L"Title", L"Artist", L"Genre", L"Year",
-                L"BPM",   L"Time",   L"Key"};
+                L"BPM",   L"Time",   L"Key",   L"Added"};
             float cy2 = p.top + 34;
             for (int k = 0; k < App::kNumCols; ++k) {
                 const int id = a.colSeq[k];

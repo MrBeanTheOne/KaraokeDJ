@@ -144,6 +144,12 @@ bool Db::open(const std::wstring& path) {
     // hidden=1: excluded from search/browse/phone requests (broken versions);
     // restorable from the sidebar's Excluded view.
     exec("ALTER TABLE media_item ADD COLUMN hidden INTEGER DEFAULT 0;");
+    // added_at: when the row first entered the library (FILETIME 100 ns ticks,
+    // same unit as modified_time). Rows that predate the column get the file's
+    // mtime — the best "when did this arrive" the drive can tell us.
+    exec("ALTER TABLE media_item ADD COLUMN added_at INTEGER DEFAULT 0;");
+    exec("UPDATE media_item SET added_at = IFNULL(modified_time,0) "
+         "WHERE IFNULL(added_at,0)=0;");
     // Lookups by media_id (and the FK checks on every media_item DELETE):
     // without these, folding 4000 moved files back held the write lock ~5 s,
     // past the UI's 3 s busy timeout. Measured 4.9 s -> 0.1 s.

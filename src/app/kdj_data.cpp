@@ -385,7 +385,8 @@ void reloadBrowser(App& a) {
         a.resultsPlItem.clear();
         Db::Stmt q;
         a.db.prepare(q, "SELECT m.id, m.artist, m.title, m.path, m.type, m.duration_ms, "
-                        "m.genre, m.year, m.bpm, IFNULL(m.music_key,0), pi.id "
+                        "m.genre, m.year, m.bpm, IFNULL(m.music_key,0), "
+                        "IFNULL(m.added_at,0), pi.id "
                         "FROM playlist_item pi JOIN media_item m ON m.id=pi.media_id "
                         "WHERE pi.playlist_id=?1 ORDER BY pi.position");
         q.bind(1, a.navPlaylist);
@@ -396,10 +397,11 @@ void reloadBrowser(App& a) {
             m.year = q.colInt(7);
             m.bpm = q.colInt(8);
             m.musicKey = q.colInt(9);
+            m.addedAt = q.colInt(10);
             if (!termLower.empty() &&
                 foldW(m.label + L" " + m.path).find(termLower) == std::wstring::npos)
                 continue;
-            a.resultsPlItem.push_back(q.colInt(10));
+            a.resultsPlItem.push_back(q.colInt(11));
             a.results.push_back(std::move(m));
         }
     }

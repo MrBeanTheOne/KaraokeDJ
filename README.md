@@ -77,7 +77,9 @@ Settings) and points you at the download when one exists.
   returns. Queueing a multi-selection or a whole playlist takes what it can
   and tells you how many it skipped.
 - Sortable, resizable, reorderable columns (title, artist, genre, year, BPM,
-  time, **key**) — right-click the header to choose what shows.
+  time, **key**, **date added**) — right-click the header to choose what
+  shows. Click ADDED to see your newest imports first; tracks that predate
+  the column show the file's date from the drive.
 - Playlists with drag-reorder, played-tonight dots, and **multi-select
   everywhere** — browser and queue: shift/ctrl-click several tracks, then
   drag or right-click to queue, playlist or rotation them all at once, remove
