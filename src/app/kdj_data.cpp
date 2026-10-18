@@ -374,18 +374,85 @@ void reloadNav(App& a) {
     a.navDirty = false;
 }
 
+// Worker thread: runs the browser query on its own Db connection so the UI
+// thread (and the video it presents) never waits on a slow search.
+static void searchWorker(App& a) {
+    Db db;
+    if (!db.open(a.dbPath)) return; // no async results; UI keeps its old list
+    for (;;) {
+        App::SearchReq req;
+        {
+            std::unique_lock<std::mutex> lk(a.searchMx);
+            a.searchCv.wait(
+                lk, [&] { return a.searchPending || a.searchQuit.load(); });
+            if (a.searchQuit.load()) return;
+            req = a.searchReq;
+            a.searchPending = false;
+        }
+        std::vector<Match> out = searchMedia(db, req.term, 200000, req.prefix,
+                                             req.sortCol, req.sortAsc, req.hidden);
+        std::lock_guard<std::mutex> lk(a.searchMx);
+        if (req.gen == a.searchReq.gen) { // stale results lose to a newer query
+            a.searchOut = std::move(out);
+            a.searchOutGen = req.gen;
+        }
+    }
+}
+
+void stopSearchWorker(App& a) {
+    a.searchQuit.store(true);
+    a.searchCv.notify_all();
+    if (a.searchThread.joinable()) a.searchThread.join();
+}
+
+// UI thread, every tick: adopt a finished async search. Selection follows the
+// track id, the scroll offset just clamps — same contract reloadBrowser kept
+// when the query was synchronous.
+void pollSearch(App& a) {
+    std::vector<Match> res;
+    {
+        std::lock_guard<std::mutex> lk(a.searchMx);
+        if (a.searchOutGen < 0 || a.searchOutGen != a.searchGen) return;
+        res = std::move(a.searchOut);
+        a.searchOutGen = -1;
+    }
+    if (a.nav != NavMode::Library && a.nav != NavMode::Folder) return;
+    const int64_t prevSelId = a.selLib >= 0 && a.selLib < int(a.results.size())
+                                  ? a.results[a.selLib].id
+                                  : 0;
+    a.results = std::move(res);
+    a.selLib = a.results.empty() ? -1 : 0;
+    if (prevSelId) {
+        for (size_t i = 0; i < a.results.size(); ++i)
+            if (a.results[i].id == prevSelId) {
+                a.selLib = int(i);
+                break;
+            }
+    }
+    a.selRows.clear();
+    if (a.selLib >= 0) a.selRows.insert(a.selLib);
+    a.libScroll = std::clamp(a.libScroll, 0.f,
+                             (std::max)(0.f, float(a.results.size()) - 1));
+}
+
 void reloadBrowser(App& a) {
+    if (a.nav == NavMode::Library || a.nav == NavMode::Folder) {
+        if (!a.searchThread.joinable())
+            a.searchThread = std::thread(searchWorker, std::ref(a));
+        std::lock_guard<std::mutex> lk(a.searchMx);
+        a.searchReq = {++a.searchGen, a.search,
+                       a.nav == NavMode::Folder ? a.navFolder : L"", a.sortCol,
+                       a.sortAsc, a.nav == NavMode::Library && a.showHidden};
+        a.searchPending = true;
+        a.searchCv.notify_one();
+        a.searchDirty = false;
+        return; // pollSearch adopts the results when the worker is done
+    }
     const int64_t prevSelId =
         a.selLib >= 0 && a.selLib < int(a.results.size())
             ? a.results[a.selLib].id
             : 0;
-    if (a.nav == NavMode::Library) {
-        a.results = searchMedia(a.db, a.search, 200000, L"", a.sortCol, a.sortAsc,
-                                a.showHidden);
-    } else if (a.nav == NavMode::Folder) {
-        a.results = searchMedia(a.db, a.search, 200000, a.navFolder, a.sortCol,
-                                a.sortAsc);
-    } else if (a.nav == NavMode::Playlist) {
+    if (a.nav == NavMode::Playlist) {
         a.results.clear();
         a.resultsPlItem.clear();
         Db::Stmt q;

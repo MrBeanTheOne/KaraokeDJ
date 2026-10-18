@@ -594,9 +594,17 @@ bool exportProfile(App& a, const std::wstring& file) {
         a.db.exec("CREATE TABLE exp.settings AS SELECT key, value FROM settings "
                   "WHERE key NOT IN ('win_w','win_h','audio_device',"
                   "'video_monitor','snap_blob','snap_clean','reconcile_id');") &&
+        // type/duration/size/mtime/added_at travel too: a fresh machine can
+        // then RECREATE the library rows instead of demanding a full rescan
+        // (size+mtime make that rescan the fast unchanged-skip path anyway).
         a.db.exec("CREATE TABLE exp.media AS SELECT path, artist, title, genre, "
                   "year, bpm, IFNULL(music_key,0) music_key, cue_in_ms, "
-                  "cue_out_ms, IFNULL(hidden,0) hidden FROM media_item;") &&
+                  "cue_out_ms, IFNULL(hidden,0) hidden, type, duration_ms, "
+                  "file_size, modified_time, IFNULL(added_at,0) added_at "
+                  "FROM media_item;") &&
+        // scan roots make the sidebar folder tree (and its "Folder moved —
+        // relocate…" action) exist on the new machine from the first launch.
+        a.db.exec("CREATE TABLE exp.roots AS SELECT path FROM scan_root;") &&
         a.db.exec("CREATE TABLE exp.pl AS SELECT id, name FROM playlist;") &&
         a.db.exec("CREATE TABLE exp.pli AS SELECT pi.playlist_id, m.path, "
                   "pi.position FROM playlist_item pi "
@@ -605,7 +613,8 @@ bool exportProfile(App& a, const std::wstring& file) {
     return ok;
 }
 
-bool importProfile(App& a, const std::wstring& file, int* matched, int* total) {
+bool importProfile(App& a, const std::wstring& file, int* matched, int* total,
+                   int* added) {
     Db::Stmt at;
     a.db.prepare(at, "ATTACH ?1 AS imp");
     at.bind(1, utf8(file));
@@ -630,6 +639,43 @@ bool importProfile(App& a, const std::wstring& file, int* matched, int* total) {
     Db::Stmt probe;
     const bool hasKey =
         a.db.prepare(probe, "SELECT music_key FROM imp.media LIMIT 1");
+    // Full-library profiles (1.1.35+) carry type/size/mtime and scan roots:
+    // enough to RECREATE missing rows, so a fresh install gets its whole
+    // library, playlists and folder tree from the file. The paths may point
+    // at a drive letter this machine doesn't have — the rows still import,
+    // and the sidebar's "Folder moved — relocate…" fixes them in one step
+    // (a venue-night lesson: the old import could only tag rows that already
+    // existed, which on a new machine was none, and with no scan roots there
+    // was no folder to right-click either).
+    Db::Stmt probeFull;
+    const bool hasFull =
+        a.db.prepare(probeFull, "SELECT type, file_size FROM imp.media LIMIT 1");
+    if (added) *added = 0;
+    if (hasFull) {
+        Db::Stmt c0;
+        int64_t before = 0;
+        if (a.db.prepare(c0, "SELECT COUNT(*) FROM media_item") && c0.step())
+            before = c0.colInt(0);
+        a.db.exec(
+            "INSERT INTO media_item(path,type,title,artist,duration_ms,"
+            "file_size,modified_time,status,genre,year,bpm,music_key,"
+            "cue_in_ms,cue_out_ms,hidden,added_at,search_f) "
+            "SELECT im.path, im.type, im.title, im.artist, im.duration_ms, "
+            "im.file_size, im.modified_time, 'ok', im.genre, im.year, im.bpm, "
+            "im.music_key, im.cue_in_ms, im.cue_out_ms, im.hidden, "
+            "im.added_at, fold(COALESCE(im.title,''))||char(10)||"
+            "fold(COALESCE(im.artist,''))||char(10)||fold(im.path) "
+            "FROM imp.media im "
+            "WHERE im.path NOT IN (SELECT path FROM media_item);");
+        Db::Stmt c1;
+        if (added && a.db.prepare(c1, "SELECT COUNT(*) FROM media_item") &&
+            c1.step())
+            *added = int(c1.colInt(0) - before);
+        Db::Stmt pr;
+        if (a.db.prepare(pr, "SELECT path FROM imp.roots LIMIT 1"))
+            a.db.exec("INSERT OR IGNORE INTO scan_root "
+                      "SELECT path FROM imp.roots;");
+    }
     const bool ok =
         // reconcile_id is this library's scan watermark, never another's
         a.db.exec("INSERT OR REPLACE INTO settings SELECT key, value "

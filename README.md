@@ -144,9 +144,11 @@ Settings) and points you at the download when one exists.
 - **Keyboard shortcuts** for gig ergonomics: `Space` pause/resume the live
   deck, `Ctrl+N` next singer, `↑`/`↓` walk the track list, `Enter` queue,
   `PgDn` skip, `Del` remove from queue, `Esc` back out.
-- **Profile transfer**: export settings, playlists, markers, tags, BPM and
-  detected keys to a single file and import it on another machine — set up
-  once, run anywhere.
+- **Profile transfer**: export settings, playlists, markers, tags, BPM,
+  detected keys — and the **whole library** — to a single file. Import it on
+  a fresh install and everything is there without a rescan; if the drive
+  letter differs, right-click the folder in the sidebar → relocate. Set up
+  once, run anywhere (venue computers included).
 
 ### 📱 Phone requests <sub>(optional, off by default)</sub>
 

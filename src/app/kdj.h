@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
@@ -144,6 +145,27 @@ struct App {
     Focus focus = Focus::None; // None = no box lit; typing goes to the
                                // view's natural box and focuses it
     bool searchDirty = true, navDirty = true;
+
+    // Async library search: the browser query over a big library takes long
+    // enough on a slow machine to stall the UI thread — which also presents
+    // the video output, so typing a search froze the lyrics screen. The
+    // worker owns its own Db connection (WAL readers don't block writes);
+    // only Library/Folder queries go async, playlist reloads are indexed and
+    // stay synchronous. Results land through pollSearch on the UI thread.
+    std::thread searchThread;
+    std::mutex searchMx;
+    std::condition_variable searchCv;
+    struct SearchReq {
+        int gen = 0;
+        std::wstring term, prefix;
+        int sortCol = 0;
+        bool sortAsc = true, hidden = false;
+    } searchReq;                  // guarded by searchMx
+    bool searchPending = false;   // guarded by searchMx
+    std::vector<Match> searchOut; // guarded by searchMx
+    int searchOutGen = -1;        // guarded by searchMx
+    int searchGen = 0;            // UI thread only: last requested generation
+    std::atomic<bool> searchQuit{false};
     Clock::time_point searchEditAt{}; // last search keystroke (debounce)
     NavMode nav = NavMode::Library;
     int64_t navPlaylist = -1;
@@ -502,6 +524,8 @@ void engineTick(App& a);
 Match readMatch(Db::Stmt& q, int base = 0);
 void reloadNav(App& a);
 void reloadBrowser(App& a);
+void pollSearch(App& a);      // adopt a finished async search (UI thread)
+void stopSearchWorker(App& a);
 Match matchFromPath(App& a, const std::wstring& path);
 std::wstring snapshotBlob(App& a);
 void restoreSnapshot(App& a);
@@ -521,8 +545,10 @@ bool exportProfile(App& a, const std::wstring& file);
 // A profile is keyed by path, so a library scanned under a different drive
 // letter matches nothing -- and silently "succeeding" at that is how you lose
 // an afternoon. Both are optional.
+// added (optional): library rows CREATED by this import — a full profile
+// (1.1.35+) carries the whole library, so a fresh install needs no rescan.
 bool importProfile(App& a, const std::wstring& file, int* matched = nullptr,
-                   int* total = nullptr);
+                   int* total = nullptr, int* added = nullptr);
 std::wstring pickM3u(HWND owner, const std::wstring& name); // .m3u8 save
 // Standard #EXTM3U with absolute paths: plays in VLC, re-imports here.
 bool exportPlaylistM3U(App& a, int64_t plId, const std::wstring& file);

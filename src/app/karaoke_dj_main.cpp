@@ -28,6 +28,12 @@ static LRESULT CALLBACK settingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         g_setIn.down = false;
         g_setIn.released = true;
         return 0;
+    case WM_CAPTURECHANGED: // see the main wndProc: synthesize the lost UP
+        if (g_setIn.down) {
+            g_setIn.down = false;
+            g_setIn.released = true;
+        }
+        return 0;
     case WM_MOUSEWHEEL:
         g_setIn.wheel += float(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA;
         return 0;
@@ -184,6 +190,15 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         ReleaseCapture();
         g_pending.down = false;
         g_pending.released = true;
+        return 0;
+    case WM_CAPTURECHANGED:
+        // A popup menu's modal loop stole the capture mid-press: our button-up
+        // will never arrive, so without this every widget keeps seeing a drag
+        // and the whole UI reads as frozen until the window loses focus.
+        if (g_pending.down) {
+            g_pending.down = false;
+            g_pending.released = true;
+        }
         return 0;
     case WM_RBUTTONDOWN:
         g_pending.rpressed = true;
@@ -425,6 +440,17 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             DispatchMessageW(&msg);
         }
         if (g_dpiChanged) { ui.refreshDpi(); g_dpiChanged = false; }
+        // Belt and braces for the stuck-drag class of bugs: if we believe the
+        // button is down but the physical button is up (a modal loop ate the
+        // release), synthesize it. One venue night of a frozen-feeling UI
+        // traced back to exactly this. GetAsyncKeyState reads the PHYSICAL
+        // button while WM_LBUTTONDOWN is the logical primary, so honor swap.
+        const int vkPrimary =
+            GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
+        if (g_pending.down && !(GetAsyncKeyState(vkPrimary) & 0x8000)) {
+            g_pending.down = false;
+            g_pending.released = true;
+        }
         // Minimizing reports a 0x0 client area. Resizing the render target to
         // that is meaningless, and it would have to be undone on restore.
         if (g_sized && g_w && g_h) { ui.resize(g_w, g_h); g_sized = false; }
@@ -571,9 +597,20 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                                          leafName(a.pickResult)
                                    : L"profile export failed";
                 } else if (a.pickKind == 4) { // import profile
-                    int matched = 0, total = 0;
-                    if (!importProfile(a, a.pickResult, &matched, &total)) {
+                    int matched = 0, total = 0, added = 0;
+                    if (!importProfile(a, a.pickResult, &matched, &total,
+                                       &added)) {
                         a.status = L"that file is not a Karaoke DJ profile";
+                    } else if (added > 0) {
+                        // Full profile: the library itself came along. If the
+                        // drive letter differs here, relocate beats rescanning.
+                        wchar_t m[220];
+                        swprintf(m, 220,
+                                 L"profile imported — %d tracks (%d new on "
+                                 L"this machine). Files elsewhere? right-click "
+                                 L"the folder → 'Folder moved — relocate…'",
+                                 total, added);
+                        a.status = m;
                     } else if (matched == 0 && total > 0) {
                         // Matching is by exact path, so this is almost always
                         // a drive letter that moved, or a folder this machine
@@ -848,6 +885,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.navDirty) reloadNav(a);
         if (a.searchDirty && Clock::now() - a.searchEditAt > 180ms)
             reloadBrowser(a);
+        pollSearch(a); // async library/folder results land here
 
         engineTick(a);
 
@@ -920,6 +958,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     // deadline and then leave; there is nothing left to lose by exiting hard.
     std::atomic<bool> reaped{false};
     std::thread reaper([&a, &reaped]() {
+        stopSearchWorker(a);
         if (a.pickThread.joinable()) a.pickThread.join();
         if (a.scanThread.joinable()) a.scanThread.join();
         if (a.bpmThread.joinable()) a.bpmThread.join();
