@@ -54,6 +54,12 @@ void Mixer::render(float* out, uint32_t frames, uint32_t ch) {
 
     float xgA, xgB;
     xfadeGains(crossfader.load(std::memory_order_relaxed), xgA, xgB);
+    // A posted fade OWNS the transition: its envelope replaces the crossfader
+    // for the duration. The fader is parked hard on the winning side after
+    // every fade, and leaving it in the product muted the next incoming deck
+    // for its whole "crossfade" — which then popped to full volume at
+    // completion, right at its start marker (the first-gig abrupt-start bug).
+    if (fade_.active) xgA = xgB = 1.f;
     const float ug[2] = {deckGain[0].load(std::memory_order_relaxed) * xgA *
                              autoGain[0].load(std::memory_order_relaxed),
                          deckGain[1].load(std::memory_order_relaxed) * xgB *
@@ -72,6 +78,11 @@ void Mixer::render(float* out, uint32_t frames, uint32_t ch) {
                 gain_[1 - fade_.to] = 0.f;
                 decks_[1 - fade_.to]->playing.store(false, std::memory_order_release);
                 activeDeck.store(fade_.to, std::memory_order_release);
+                // Park the fader on the winner HERE: the engine does it too,
+                // but a UI tick later — and for those 1-2 buffers the fader
+                // still parked on the loser would mute the new deck audibly.
+                crossfader.store(fade_.to == 0 ? 0.f : 1.f,
+                                 std::memory_order_relaxed);
                 fadesCompleted.fetch_add(1, std::memory_order_release);
             }
         }
