@@ -57,9 +57,15 @@ public:
 
     bool create(int monitor, int cascade = 0); // cascade offsets dev windows
     void setFrame(int slot, const VideoFrame& f); // upload a deck's newest frame
+    // Drop a slot's bitmap (deck unloaded / reloaded): a new track must never
+    // show the previous track's last frame while its own first one decodes.
+    void clearFrame(int slot);
     // Compose: baseSlot at full opacity, topSlot over it at topAlpha. Pass -1
     // to skip a slot; both -1 = the waiting screen (idle scene over black).
-    void draw(int baseSlot, int topSlot, float topAlpha);
+    // holdBlack: a video/CDG track is on air but hasn't produced a frame yet
+    // (CDG lead-in, async open) — stay black instead of flashing the waiting
+    // screen over its title screen.
+    void draw(int baseSlot, int topSlot, float topAlpha, bool holdBlack = false);
     // The full waiting-screen description (replaces setIdleText/setQr).
     void setIdleScene(const IdleScene& s);
     // Logo bitmap for the waiting screen. hasLogo() goes false after device

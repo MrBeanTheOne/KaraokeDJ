@@ -230,6 +230,13 @@ bool loadImageFile(const std::wstring& path, VideoFrame& out, int maxW) {
     return ok;
 }
 
+void VideoWindow::clearFrame(int slot) {
+    if (slot < 0 || slot > 1 || !bmp_[slot]) return;
+    bmp_[slot]->Release();
+    bmp_[slot] = nullptr;
+    bw_[slot] = bh_[slot] = 0;
+}
+
 void VideoWindow::setIdleScene(const IdleScene& s) {
     scene_ = s;
     setQr(s.qrUrl);
@@ -401,15 +408,20 @@ void VideoWindow::drawQrCard(float qx, float qy, float qw, float szQ,
         qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
         qf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
         brush->SetColor(D2D1::ColorF(0xE8ECF1));
+        // Clamped to the window: a card near an edge (overlay bottom-left,
+        // waiting-screen corner cells) otherwise clips its centered caption.
+        const D2D1_SIZE_F sz2 = rt_->GetSize();
+        const float cl = (std::max)(2.f, qx - 80),
+                    cr = (std::min)(sz2.width - 2.f, qx + qw + 80);
         const std::wstring& cap = scene_.qrCaption;
         rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
-                       D2D1::RectF(qx - 80, qy + qw + 6, qx + qw + 80,
+                       D2D1::RectF(cl, qy + qw + 6, cr,
                                    qy + qw + 6 + szQ * 1.5f),
                        brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
         brush->SetColor(D2D1::ColorF(0x9BA3AD));
         rt_->DrawTextW(qrUrl_.c_str(), UINT32(qrUrl_.size()), qf,
-                       D2D1::RectF(qx - 80, qy + qw + 6 + szQ * 1.6f,
-                                   qx + qw + 80, qy + qw + 6 + szQ * 3.2f),
+                       D2D1::RectF(cl, qy + qw + 6 + szQ * 1.6f, cr,
+                                   qy + qw + 6 + szQ * 3.2f),
                        brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
         qf->Release();
     }
@@ -470,13 +482,13 @@ void VideoWindow::drawVideoOverlay() {
     brush->Release();
 }
 
-void VideoWindow::draw(int baseSlot, int topSlot, float topAlpha) {
+void VideoWindow::draw(int baseSlot, int topSlot, float topAlpha, bool holdBlack) {
     if (!ensureTarget()) return;
     rt_->BeginDraw();
     rt_->Clear(D2D1::ColorF(D2D1::ColorF::Black));
     const bool anyVideo = (baseSlot >= 0 && bmp_[baseSlot]) ||
                           (topSlot >= 0 && bmp_[topSlot] && topAlpha > 0.f);
-    if (!anyVideo) drawIdle();
+    if (!anyVideo && !holdBlack) drawIdle();
     drawSlot(baseSlot, 1.f);
     drawSlot(topSlot, topAlpha);
     if (anyVideo && overlay_) drawVideoOverlay();

@@ -32,6 +32,7 @@ bool loadTo(App& a, int d, const Match& m) {
     a.vdec[d].close();
     a.cur[d].reset();
     a.hasVid[d] = a.hasCdg[d] = false;
+    if (a.fullOut) a.fullOut->clearFrame(d); // never show the old track's frame
     if (!a.decks[d]->load(audio, false)) {
         a.status = L"LOAD FAILED (skipped): " + m.label;
         return false;
@@ -143,6 +144,7 @@ void clearDeckSlot(App& a, int d) {
     a.wave[d].cancel();
     a.cur[d].reset();
     a.hasVid[d] = a.hasCdg[d] = false;
+    if (a.fullOut) a.fullOut->clearFrame(d);
     a.label[d].clear();
     a.autoCued[d] = false;
 }
@@ -431,8 +433,19 @@ void presentVideo(App& a) {
         if (w->bitmapsLost())
             for (int d = 0; d < 2; ++d)
                 if (a.cur[d]) w->setFrame(d, *a.cur[d]);
-        if (ft >= 0 && t >= 0.f) w->draw(1 - ft, ft, t);
-        else w->draw(act >= 0 && (a.hasVid[act] || a.hasCdg[act]) ? act : -1, -1, 0.f);
+        // A video/CDG track that hasn't produced a frame yet (CDG lead-in,
+        // async open) holds BLACK — flashing the waiting screen there buried
+        // the karaoke title screen. hasVid alone can't decide: it reads true
+        // for an mp3 until the async probe demotes it, so the track type
+        // breaks the tie. Audio tracks keep the waiting screen as always.
+        const auto wantsVideo = [&](int d) {
+            return d >= 0 && !a.label[d].empty() &&
+                   (a.hasCdg[d] ||
+                    (a.hasVid[d] && a.deckMatch[d].type != "audio"));
+        };
+        if (ft >= 0 && t >= 0.f) w->draw(1 - ft, ft, t, wantsVideo(ft));
+        else w->draw(act >= 0 && (a.hasVid[act] || a.hasCdg[act]) ? act : -1,
+                     -1, 0.f, wantsVideo(act));
     }
 }
 
