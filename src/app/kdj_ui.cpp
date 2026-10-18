@@ -87,9 +87,9 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         a.menu = {MenuReq::VideoOut, -1, ui.in.rX, ui.in.rY};
 
 
-    drawRhythm(a, ui, rc(16, 84, W - 32, 56));
-
-    const float mixW = 330, top = 148, deckH = 252;
+    // (the old top rhythm strip lived at y=84 — it only echoed loudness the
+    // deck waveforms already show, so its 64 px went to the browser instead)
+    const float mixW = 330, top = 84, deckH = 252;
     const float deckW = (W - mixW - 48) / 2;
     drawDeck(a, ui, 0, rc(16, top, deckW, deckH));
     drawMixer(a, ui, rc(16 + deckW + 8, top, mixW, deckH));
@@ -104,7 +104,7 @@ void drawUi(App& a, Ui& ui, float W, float H) {
             a.resizingQueue = true;
         if (!ui.in.down) a.resizingQueue = false;
         if (a.resizingQueue) // min fits "QUEUE (NNN)" plus AUTOQUEUE..» intact
-            a.queueW = std::clamp(W - 16.f - ui.in.mx, 430.f,
+            a.queueW = std::clamp(W - 16.f - ui.in.mx, 390.f,
                                   (std::min)(560.f, W * 0.4f));
     }
     const float qw = a.queueOpen ? a.queueW : 30.f;

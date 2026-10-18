@@ -156,7 +156,6 @@ struct App {
     // list being built; AUTOMIX still mixes between the two decks when one is
     // cued. Deliberately NOT persisted: every night starts in manual control.
     bool autoQueueOn = false;
-    bool repeatOn = false; // finished tracks rejoin the queue tail
     MixMode mixMode = MixMode::Fade;
     uint64_t lastFades = 0;
 
@@ -636,7 +635,6 @@ extern const wchar_t* kWebFmtNames[4]; // MP4 720p / MP4 best / MP3 / WAV
 
 void scrollbar(App& a, Ui& ui, int id, const D2D1_RECT_F& list, size_t count,
                float rowH, float& scroll);
-void drawRhythm(App& a, Ui& ui, const D2D1_RECT_F& r);
 std::vector<std::wstring> folderChildren(const App& a, const std::wstring& dir);
 void drawDeck(App& a, Ui& ui, int d, const D2D1_RECT_F& r);
 void drawMixer(App& a, Ui& ui, const D2D1_RECT_F& r);

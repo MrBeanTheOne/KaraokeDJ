@@ -331,38 +331,4 @@ void drawMixer(App& a, Ui& ui, const D2D1_RECT_F& r) {
 // "now" line — deck A drawn upward, deck B downward, ±20 s window.
 // ponytail: reuses the 400-bin full-track scan, so blocks are chunky on long
 // tracks; a zoomed rescan around the playhead is the upgrade if it matters.
-void drawRhythm(App& a, Ui& ui, const D2D1_RECT_F& r) {
-    ui.rect(r, cInset, 8); // black well, VDJ-style
-    ui.frameRect(r, cBorder, 8);
-    const float midY = (r.top + r.bottom) / 2;
-    ui.line(r.left + 6, midY, r.right - 6, midY, col(0x1B1B1F), 1);
-    constexpr double win = 20.0; // seconds visible on each side of "now"
-    const float cx = (r.left + r.right) / 2;
-    const float pxPerSec = (cx - r.left - 6) / float(win);
-    ui.clipPush(rc(r.left + 4, r.top + 3, r.right - r.left - 8, r.bottom - r.top - 6));
-    for (int d = 0; d < 2; ++d) {
-        const uint64_t total = a.decks[d]->totalFrames.load();
-        const int readyN = a.wave[d].readyBins();
-        if (!total || !readyN) continue;
-        const double dur = double(total) / kRate;
-        const double pos = double(a.decks[d]->framesPlayed.load()) / kRate;
-        const D2D1_COLOR_F ac = d == 0 ? cA : cB;
-        const float half = midY - r.top - 8;
-        const double binSec = dur / WaveformScanner::kBins;
-        const float bw = (std::max)(1.f, float(binSec * pxPerSec) - 0.5f);
-        for (int i = 0; i < readyN; ++i) {
-            const double t = (i + 0.5) * binSec;
-            const float x = cx + float((t - pos) * pxPerSec) - bw / 2;
-            if (x + bw < r.left + 4 || x > r.right - 4) continue;
-            const float v = (std::min)(1.f, sqrtf(a.wave[d].bin(i)) * 1.15f);
-            const float bh = (std::max)(1.5f, v * half);
-            const D2D1_COLOR_F c = t <= pos ? ac : mix(ac, col(0x3A3A40), 0.6f);
-            ui.rect(d == 0 ? rc(x, midY - bh, bw, bh) : rc(x, midY + 1, bw, bh), c,
-                    0.5f);
-        }
-    }
-    ui.clipPop();
-    ui.rect(rc(cx - 1, r.top + 4, 2, r.bottom - r.top - 8), cText, 1); // now line
-}
-
 // Immediate children of dir among folders that contain media.

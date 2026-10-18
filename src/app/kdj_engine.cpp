@@ -586,11 +586,7 @@ void engineTick(App& a) {
         a.retireAfterFade = -1;
         a.fadePosted = false; // a fade short enough to finish between ticks
         if (act >= 0) {
-            if (other >= 0 && other != act) {
-                if (a.repeatOn && !a.label[other].empty())
-                    a.queue.push_back(a.deckMatch[other]); // repeat: to the tail
-                clearDeckSlot(a, other);
-            }
+            if (other >= 0 && other != act) clearDeckSlot(a, other);
             // Park the crossfader on the winning side: the freed deck is now
             // silent in the master, so a track can be cued and scrubbed there.
             // Manual mix: the fader is the operator's — hands off.
@@ -673,14 +669,10 @@ void engineTick(App& a) {
             const int idle = 1 - act;
             const bool cued = !a.label[idle].empty() &&
                               a.decks[idle]->state() == DeckState::Ready;
-            // Repeat with nothing else queued: the playing track is its own
-            // successor (crossfades into a fresh load of itself).
-            const bool selfRepeat =
-                !cued && a.queue.empty() && a.repeatOn && !a.label[act].empty();
             // AUTOQUEUE off: the queue never feeds a deck by itself, but a
             // track someone cued on the other deck still mixes in (automix's
             // actual job is between the two decks).
-            if (cued || (a.autoQueueOn && !a.queue.empty()) || selfRepeat) {
+            if (cued || (a.autoQueueOn && !a.queue.empty())) {
                 double rem = a.decks[act]->remainingSec();
                 bool trigger = a.decks[act]->eos.load();
                 if (a.cueOut[act] > 0) { // manual END marker wins
@@ -696,8 +688,6 @@ void engineTick(App& a) {
                     if (cued) { // deck-cued track wins: it is "the next song"
                         a.pendingFade = idle;
                         a.pendingDur = a.automixOn ? a.fadeSec : 0.08;
-                    } else if (selfRepeat) {
-                        playNow(a, a.deckMatch[act]);
                     } else {
                         const Match m = a.queue.front();
                         a.queue.pop_front();

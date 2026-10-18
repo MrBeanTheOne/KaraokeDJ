@@ -25,7 +25,6 @@ void setSetting(Db& db, const char* key, const std::string& v) {
 void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.fadeSec = atof(getSetting(a.db, "fade_sec", "3.0").c_str());
     a.automixOn = getSetting(a.db, "automix_on", "1") == "1";
-    a.repeatOn = getSetting(a.db, "repeat_on", "0") == "1";
     a.mixMode = getSetting(a.db, "mix_mode", "fade") == "smart" ? MixMode::Smart
                                                                 : MixMode::Fade;
     a.chosenMonitor = atoi(getSetting(a.db, "video_monitor", "-1").c_str());
@@ -37,7 +36,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     // min fits "QUEUE (NNN)" + the header buttons (AUTOQUEUE..»); heals
     // saved widths from older builds
     a.queueW = std::clamp(float(atof(getSetting(a.db, "queue_w", "430").c_str())),
-                          430.f, 560.f);
+                          390.f, 560.f);
     { // queue columns: plain width shares, "0.50,0.32,0.18"
         const std::string qs = getSetting(a.db, "queue_cols", "");
         float f[App::kQueueCols]{};
@@ -152,7 +151,6 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     snprintf(b, 32, "%.1f", a.fadeSec);
     setSetting(a.db, "fade_sec", b);
     setSetting(a.db, "automix_on", a.automixOn ? "1" : "0");
-    setSetting(a.db, "repeat_on", a.repeatOn ? "1" : "0");
     setSetting(a.db, "mix_mode", a.mixMode == MixMode::Smart ? "smart" : "fade");
     setSetting(a.db, "video_monitor", std::to_string(a.chosenMonitor));
     setSetting(a.db, "singer_name", utf8(a.singerName));
