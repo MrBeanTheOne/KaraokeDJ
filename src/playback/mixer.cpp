@@ -29,6 +29,7 @@ void Mixer::render(float* out, uint32_t frames, uint32_t ch) {
         fade_.dur = c.durSamples ? c.durSamples : 1;
         fade_.to = c.toDeck;
         fade_.curve = c.curve;
+        fade_.park = c.park;
         decks_[c.toDeck]->playing.store(true, std::memory_order_release);
     }
 
@@ -87,8 +88,10 @@ void Mixer::render(float* out, uint32_t frames, uint32_t ch) {
                 // Park the fader on the winner HERE: the engine does it too,
                 // but a UI tick later — and for those 1-2 buffers the fader
                 // still parked on the loser would mute the new deck audibly.
-                crossfader.store(fade_.to == 0 ? 0.f : 1.f,
-                                 std::memory_order_relaxed);
+                // Manual mix (park=false): the fader belongs to the operator.
+                if (fade_.park)
+                    crossfader.store(fade_.to == 0 ? 0.f : 1.f,
+                                     std::memory_order_relaxed);
                 fadesCompleted.fetch_add(1, std::memory_order_release);
             }
         }

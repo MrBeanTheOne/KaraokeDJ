@@ -494,9 +494,11 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             if (a.prompt != App::Prompt::None) {
                 commitPrompt(a);
             } else if (a.focus == Focus::Search && a.search.rfind(L"http", 0) == 0) {
-                startYoutube(a, a.search); // pasted URL: download, then queue
+                webEnqueue(a, a.search, L""); // pasted URL → WEB download strip
+                a.nav = NavMode::Web;         // progress is visible there
                 a.search.clear();
-                a.searchDirty = true;
+            } else if (a.nav == NavMode::Web) {
+                webSearch(a, a.search); // Enter = search YouTube
             } else if (a.nav != NavMode::Singers && a.nav != NavMode::Settings &&
                        a.nav != NavMode::History) {
                 queueSelected(a);
@@ -786,15 +788,6 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                 a.status = L"phone request: " + a.reqInbox.back().singer +
                            L" — " + a.reqInbox.back().song.label;
         }
-        if (a.ytDone.exchange(false)) {
-            if (a.ytThread.joinable()) a.ytThread.join();
-            if (!a.ytPath.empty()) {
-                a.queue.push_back(matchFromPath(a, a.ytPath));
-                a.status = L"YouTube ready → queued: " + leafName(a.ytPath);
-            } else {
-                a.status = L"YouTube: " + a.ytError;
-            }
-        }
         if (g_displayChanged) { // re-place the fullscreen output (FR-011)
             g_displayChanged = false;
             if (a.outMonitor >= 0) {
@@ -886,6 +879,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.searchDirty && Clock::now() - a.searchEditAt > 180ms)
             reloadBrowser(a);
         pollSearch(a); // async library/folder results land here
+        webPoll(a);    // YouTube results + finished downloads land here
 
         engineTick(a);
 
@@ -967,7 +961,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
         if (a.cleanThread.joinable()) a.cleanThread.join();
         stopWatcher(a);
         a.web.stop();
-        if (a.ytThread.joinable()) a.ytThread.join();
+        stopWebWorkers(a);
         a.out.stop();
         a.deckA.stopAndUnload();
         a.deckB.stopAndUnload();

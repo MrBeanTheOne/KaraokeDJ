@@ -32,7 +32,9 @@ Settings) and points you at the download when one exists.
   blue (deck A) / red (deck B) from center.
 - **Automix off = true manual mode** (VirtualDJ-style): PLAY opens a deck
   *alongside* the live one — both decks play at once and the crossfader is
-  the mix. Automation keeps its hands off until one deck stops.
+  the mix, and **nothing moves your fader**. Smart silence-skip markers apply
+  to hand-started decks too. Automation keeps its hands off until one deck
+  stops.
 - **OVERLAY on music videos** (top bar): shows NEXT UP along the top and the
   phone-request QR bottom-left over the playing video. Toggle it off when a
   karaoke video's lyrics need the screen; audio-only tracks always show the
@@ -44,8 +46,10 @@ Settings) and points you at the download when one exists.
 - **Hardware video decode** (Media Foundation + D3D11): smooth video karaoke
   on a weak laptop CPU.
 - Plays **MP3+G** (mp3/cdg pairs), **karaoke ZIPs**, **video files**, plain
-  audio — and **YouTube links** pasted straight into the search box (point the
-  download folder at a library folder in Settings and they import themselves).
+  audio — and YouTube, via the built-in **WEB view**: search YouTube from the
+  sidebar, pick MP4 720p / MP4 best / MP3 / WAV, watch the download progress,
+  and the file imports into the library by itself. Pasted links land in the
+  same download strip.
 - **Key change** on each deck for singers who need the song a step down: the
   readout shows the song's **actual musical key** (detected automatically in
   the background) and `−`/`+` move it, so you set *Am → Gm*, not "minus two".

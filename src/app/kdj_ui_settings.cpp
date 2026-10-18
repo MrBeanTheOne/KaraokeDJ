@@ -317,7 +317,15 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
                     : L"Phones open:  " + cachedUrl +
                           L"   (QR shows on the video output between songs)",
                 11, cachedUrl.empty() ? cRed : cText, 0, false);
-        y += 24;
+        y += 22;
+        // The first-gig lesson: guest/client Wi-Fi often ISOLATES devices —
+        // phones reach the internet but not this computer, and no firewall
+        // or public/private switch on this side can fix that.
+        ui.text(rc(x, y, w, 18),
+                L"Guest Wi-Fi blocking it? Use Windows Mobile Hotspot (Settings "
+                L"→ Network) and put singers on this PC's own network.",
+                10, cDim, 0, false);
+        y += 22;
     }
     y += 20;
 

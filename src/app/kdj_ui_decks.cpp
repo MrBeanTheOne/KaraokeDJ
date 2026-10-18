@@ -303,10 +303,16 @@ void drawMixer(App& a, Ui& ui, const D2D1_RECT_F& r) {
         a.mixer.crossfader.store(shown);
 
     const std::wstring amLabel =
-        !a.automixOn ? L"AUTOMIX: CUT"
+        !a.automixOn ? L"MANUAL MIX"
         : a.mixMode == MixMode::Smart ? L"AUTOMIX: SMART" : L"AUTOMIX: FADE";
     const D2D1_RECT_F amr = rc(r.left + 16, r.bottom - 38, 136, 28);
-    if (ui.toggle(203, amr, amLabel, a.automixOn, cGreen)) a.automixOn = !a.automixOn;
+    if (ui.toggle(203, amr, amLabel, a.automixOn, cGreen)) {
+        a.automixOn = !a.automixOn;
+        // Entering manual mode the fader is YOURS: center it (both decks at
+        // unity) rather than leaving it parked wherever the last automix
+        // transition put it — a parked fader silently mutes the second deck.
+        if (!a.automixOn) a.mixer.crossfader.store(0.5f);
+    }
     if (ui.in.rpressed && hit(amr, ui.in.rX, ui.in.rY))
         a.menu = {MenuReq::Automix, -1, ui.in.rX, ui.in.rY};
 

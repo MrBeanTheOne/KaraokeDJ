@@ -520,6 +520,7 @@ void engineTick(App& a) {
             const int pf = a.pendingFade;
             a.retireAfterFade = a.mixer.activeDeck.load(); // outgoing deck, if any
             MixCommand c{pf, uint64_t(a.pendingDur * kRate), FadeCurve::EqualPower};
+            c.park = a.automixOn; // manual mix: the fader stays the operator's
             a.mixer.cmds.push(&c, 1);
             a.fadePosted = true; // until the mixer publishes fadeTo
             a.pendingFade = -1;
@@ -568,7 +569,8 @@ void engineTick(App& a) {
             }
             // Park the crossfader on the winning side: the freed deck is now
             // silent in the master, so a track can be cued and scrubbed there.
-            a.mixer.crossfader.store(act == 0 ? 0.f : 1.f);
+            // Manual mix: the fader is the operator's — hands off.
+            if (a.automixOn) a.mixer.crossfader.store(act == 0 ? 0.f : 1.f);
         }
     }
     // Preload: keep the idle deck holding the next queued track from the
@@ -684,7 +686,9 @@ void engineTick(App& a) {
     // instead of the old invisible silence skipping. Saved markers win.
     for (int d = 0; d < 2; ++d) {
         if (a.smartCueSet[d] || a.cueFromDb[d] || a.label[d].empty()) continue;
-        if (!(a.automixOn && a.mixMode == MixMode::Smart)) continue;
+        // Smart markers are a property of the TRACK, not of automix: manual
+        // mode wants the silent intro skipped on a hand-started deck too.
+        if (a.mixMode != MixMode::Smart) continue;
         if (a.wave[d].loudness() <= 0.f) continue; // scan still running
         const uint64_t totalFr = a.decks[d]->totalFrames.load();
         if (!totalFr) continue;

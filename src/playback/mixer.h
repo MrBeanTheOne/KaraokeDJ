@@ -19,6 +19,9 @@ struct MixCommand {
     // automix off; the crossfader is the mix). The started deck becomes the
     // active one, so video and end-of-track logic follow the newest start.
     bool start = false;
+    // park=false (manual mix): leave the crossfader where the operator put it
+    // when this fade completes, instead of snapping it onto the winner.
+    bool park = true;
 };
 
 class Mixer {
@@ -57,5 +60,6 @@ private:
         uint64_t pos = 0, dur = 1;
         int to = 0;
         FadeCurve curve = FadeCurve::EqualPower;
+        bool park = true;
     } fade_;
 };

@@ -74,7 +74,21 @@ static const D2D1_COLOR_F cHover = col(0x1E1E23);
 static const D2D1_COLOR_F cGone = col(0x55555C); // rows whose drive is away
 
 enum class MixMode { Fade, Smart };
-enum class NavMode { Library, Playlist, Folder, Singers, Settings, History };
+enum class NavMode { Library, Playlist, Folder, Singers, Settings, History, Web };
+
+// WEB view (YouTube via yt-dlp): one search hit, and one download-strip item.
+struct WebHit {
+    std::wstring id, title, channel;
+    int durSec = 0;
+};
+struct WebDl {
+    std::wstring target; // video id, or a full pasted URL
+    std::wstring title;
+    int fmt = 0;         // index into the format table (kdj_jobs.cpp)
+    int state = 0;       // 0 waiting, 1 downloading, 2 done, 3 failed
+    int pct = 0;         // progress while downloading
+    std::wstring path, error;
+};
 enum class Focus { None, Search, SingerName, IdleTitle };
 
 // itemId >= 0: rotation entry; -1: section divider; -2: play-history entry.
@@ -413,9 +427,20 @@ struct App {
     std::vector<int64_t> cleanGone; // worker writes, main reads after cleanDone
 
     // YouTube download (yt-dlp.exe beside the app or on PATH)
-    std::thread ytThread;
-    std::atomic<bool> ytBusy{false}, ytDone{false};
-    std::wstring ytPath, ytError;
+    // WEB view: search YouTube from the app, download in chosen quality,
+    // results land in the yt folder and import themselves. One download at a
+    // time (venue bandwidth), progress visible per item in the view.
+    std::vector<WebHit> webHits; // UI thread: last adopted results
+    int webFmt = 0;              // 0 MP4 720p, 1 MP4 best, 2 MP3, 3 WAV
+    std::mutex webMx;            // guards webFound/webErr/webDls
+    std::vector<WebHit> webFound;
+    std::wstring webErr;
+    std::deque<WebDl> webDls;
+    std::thread webSearchThread, webDlThread;
+    std::condition_variable webDlCv;
+    std::atomic<bool> webSearchBusy{false}, webSearchDone{false};
+    std::atomic<bool> webQuit{false};
+    std::atomic<bool> webRescan{false}; // a download landed: refresh library
     std::wstring ytDir; // download folder (yt_dir); empty = %APPDATA% cache
 
     MenuReq menu;
@@ -564,7 +589,14 @@ bool importPlaylistM3U(App& a, const std::wstring& file, int* matched = nullptr,
                        int* total = nullptr);
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
 std::wstring youtubeCacheDir(const std::wstring& custom = L"");
-void startYoutube(App& a, std::wstring url);
+// WEB view: search YouTube (worker thread; results adopt via webPoll),
+// enqueue a download by hit index or pasted URL, poll results/finished
+// downloads on the UI thread, wind the workers down at exit.
+void webSearch(App& a, const std::wstring& term);
+void webEnqueue(App& a, const std::wstring& target, const std::wstring& title);
+void webPoll(App& a);
+void stopWebWorkers(App& a);
+extern const wchar_t* kWebFmtNames[4]; // MP4 720p / MP4 best / MP3 / WAV
 
 void scrollbar(App& a, Ui& ui, int id, const D2D1_RECT_F& list, size_t count,
                float rowH, float& scroll);

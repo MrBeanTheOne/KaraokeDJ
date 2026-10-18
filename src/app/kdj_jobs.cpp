@@ -976,49 +976,249 @@ std::wstring youtubeCacheDir(const std::wstring& custom) {
     return dir;
 }
 
-void startYoutube(App& a, std::wstring url) {
-    if (a.ytBusy.load()) {
-        a.status = L"a YouTube download is already running";
-        return;
+// ------------------------------------------------------------------ WEB view
+// Search YouTube from inside the app (Enter in the WEB view), pick a quality,
+// download with live progress, and the file lands in the yt folder and gets
+// imported. Replaces the old paste-a-URL one-shot that gave no feedback and
+// looked like a frozen search box.
+
+const wchar_t* kWebFmtNames[4] = {L"MP4 720p", L"MP4 BEST", L"MP3", L"WAV"};
+static const wchar_t* kWebFmtArgs[4] = {
+    L"-f \"bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b\" --remux-video mp4",
+    L"-f \"bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b\" --remux-video mp4",
+    L"-f \"ba/b\" -x --audio-format mp3 --audio-quality 0",
+    L"-f \"ba/b\" -x --audio-format wav",
+};
+
+// Pull "key":"string value" out of one dump-json line, with the escapes a
+// title actually contains (\" \\ \uXXXX). Not a JSON parser; doesn't need
+// to be — yt-dlp emits one flat object per line.
+static std::wstring jsonStr(const std::string& line, const char* key) {
+    const std::string pat = std::string("\"") + key + "\":\"";
+    const size_t b = line.find(pat);
+    if (b == std::string::npos) return L"";
+    std::string raw;
+    for (size_t i = b + pat.size(); i < line.size(); ++i) {
+        const char c = line[i];
+        if (c == '"') break;
+        if (c != '\\') { raw += c; continue; }
+        if (++i >= line.size()) break;
+        switch (line[i]) {
+        case 'n': case 't': raw += ' '; break;
+        case 'u':
+            if (i + 4 < line.size()) {
+                const unsigned cp = strtoul(line.substr(i + 1, 4).c_str(), nullptr, 16);
+                // encode as UTF-8 so wide() below rebuilds the real char
+                if (cp < 0x80) raw += char(cp);
+                else if (cp < 0x800) {
+                    raw += char(0xC0 | (cp >> 6));
+                    raw += char(0x80 | (cp & 0x3F));
+                } else {
+                    raw += char(0xE0 | (cp >> 12));
+                    raw += char(0x80 | ((cp >> 6) & 0x3F));
+                    raw += char(0x80 | (cp & 0x3F));
+                }
+                i += 4;
+            }
+            break;
+        default: raw += line[i];
+        }
     }
-    if (a.ytThread.joinable()) a.ytThread.join();
-    url.erase(std::remove_if(url.begin(), url.end(),
-                             [](wchar_t c) { return c == L'"' || c < 32; }),
-              url.end());
-    a.ytBusy.store(true);
-    a.status = L"YouTube: downloading…  " + url;
-    const std::wstring dir = youtubeCacheDir(a.ytDir); // read on the UI thread
-    a.ytThread = std::thread([&a, url, dir]() {
-        // MP4 (H.264+AAC) so Media Foundation plays it like any library video.
-        const std::wstring cmd =
-            L"yt-dlp.exe --no-playlist --encoding utf-8 "
-            L"-f \"b[ext=mp4]/bv*[ext=mp4]+ba[ext=m4a]/b\" --remux-video mp4 "
-            L"--no-simulate --print after_move:filepath "
-            L"-o \"" + dir + L"\\%(title)s [%(id)s].%(ext)s\" \"" + url + L"\"";
+    return wide(raw);
+}
+
+static int jsonNum(const std::string& line, const char* key) {
+    const std::string pat = std::string("\"") + key + "\":";
+    const size_t b = line.find(pat);
+    if (b == std::string::npos) return 0;
+    return atoi(line.c_str() + b + pat.size());
+}
+
+void webSearch(App& a, const std::wstring& term) {
+    if (a.webSearchBusy.load()) return; // one search at a time
+    if (a.webSearchThread.joinable()) a.webSearchThread.join();
+    std::wstring t = term;
+    t.erase(std::remove_if(t.begin(), t.end(),
+                           [](wchar_t c) { return c == L'"' || c < 32; }),
+            t.end());
+    if (t.empty()) return;
+    a.webSearchBusy.store(true);
+    a.status = L"searching YouTube…  " + t;
+    a.webSearchThread = std::thread([&a, t]() {
         DWORD code = DWORD(-1);
-        std::wstring out = runCapture(cmd, code);
-        // Last non-empty line of stdout is the final file path.
-        std::wstring path;
-        const size_t end = out.find_last_not_of(L"\r\n");
-        if (end != std::wstring::npos) {
-            out.resize(end + 1);
-            const size_t nl = out.find_last_of(L'\n');
-            path = nl == std::wstring::npos ? out : out.substr(nl + 1);
-            while (!path.empty() && path.back() == L'\r') path.pop_back();
+        const std::wstring out = runCapture(
+            L"yt-dlp.exe \"ytsearch25:" + t +
+                L"\" --flat-playlist --dump-json --no-warnings --encoding utf-8",
+            code);
+        std::vector<WebHit> hits;
+        const std::string u = utf8(out);
+        size_t at = 0;
+        while (at < u.size()) {
+            size_t e = u.find('\n', at);
+            if (e == std::string::npos) e = u.size();
+            const std::string line = u.substr(at, e - at);
+            at = e + 1;
+            if (line.find("\"id\":") == std::string::npos) continue;
+            WebHit h;
+            h.id = jsonStr(line, "id");
+            h.title = jsonStr(line, "title");
+            h.channel = jsonStr(line, "channel");
+            if (h.channel.empty()) h.channel = jsonStr(line, "uploader");
+            h.durSec = jsonNum(line, "duration");
+            if (!h.id.empty() && !h.title.empty()) hits.push_back(std::move(h));
         }
-        if (code == 0 && !path.empty() &&
-            GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            a.ytPath = path;
-            a.ytError.clear();
-        } else {
-            a.ytPath.clear();
-            a.ytError = out.empty()
-                            ? L"yt-dlp.exe not found — put it next to the app"
-                            : L"download failed (" + // yt-dlp errors are at the tail
-                                  out.substr(out.size() > 160 ? out.size() - 160 : 0) +
-                                  L")";
-        }
-        a.ytBusy.store(false);
-        a.ytDone.store(true);
+        std::lock_guard<std::mutex> lk(a.webMx);
+        a.webFound = std::move(hits);
+        a.webErr = a.webFound.empty()
+                       ? (out.empty()
+                              ? L"yt-dlp.exe not found — put it next to the app"
+                              : L"no results (yt-dlp may need an update — "
+                                L"Settings)")
+                       : L"";
+        a.webSearchBusy.store(false);
+        a.webSearchDone.store(true);
     });
+}
+
+// The download worker: one at a time (venue bandwidth), progress parsed from
+// yt-dlp --newline lines, final path from --print after_move:filepath.
+static void webDlWorker(App& a) {
+    for (;;) {
+        size_t job = SIZE_MAX;
+        std::wstring target;
+        int fmt = 0;
+        {
+            std::unique_lock<std::mutex> lk(a.webMx);
+            a.webDlCv.wait(lk, [&] {
+                if (a.webQuit.load()) return true;
+                for (const WebDl& d : a.webDls)
+                    if (d.state == 0) return true;
+                return false;
+            });
+            if (a.webQuit.load()) return;
+            for (size_t i = 0; i < a.webDls.size(); ++i)
+                if (a.webDls[i].state == 0) {
+                    job = i;
+                    a.webDls[i].state = 1;
+                    target = a.webDls[i].target;
+                    fmt = a.webDls[i].fmt;
+                    break;
+                }
+        }
+        if (job == SIZE_MAX) continue;
+        const std::wstring dir = youtubeCacheDir(a.ytDir);
+        const std::wstring url =
+            target.rfind(L"http", 0) == 0
+                ? target
+                : L"https://www.youtube.com/watch?v=" + target;
+        const std::wstring cmd =
+            L"yt-dlp.exe --no-playlist --encoding utf-8 --newline " +
+            std::wstring(kWebFmtArgs[std::clamp(fmt, 0, 3)]) +
+            L" --no-simulate --print after_move:filepath "
+            L"-o \"" + dir + L"\\%(title)s [%(id)s].%(ext)s\" \"" + url + L"\"";
+
+        // Stream the pipe line by line so progress is live.
+        DWORD code = DWORD(-1);
+        std::wstring lastLine;
+        {
+            SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+            HANDLE rd = nullptr, wr = nullptr;
+            if (!CreatePipe(&rd, &wr, &sa, 0)) continue;
+            SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+            STARTUPINFOW si{};
+            si.cb = sizeof(si);
+            si.dwFlags = STARTF_USESTDHANDLES;
+            si.hStdOutput = wr;
+            si.hStdError = wr;
+            PROCESS_INFORMATION pi{};
+            std::wstring cl = cmd;
+            if (CreateProcessW(nullptr, cl.data(), nullptr, nullptr, TRUE,
+                               CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+                CloseHandle(wr);
+                wr = nullptr;
+                std::string acc;
+                char buf[2048];
+                DWORD n = 0;
+                while (ReadFile(rd, buf, sizeof(buf), &n, nullptr) && n) {
+                    acc.append(buf, n);
+                    size_t nl;
+                    while ((nl = acc.find('\n')) != std::string::npos) {
+                        std::string ln = acc.substr(0, nl);
+                        acc.erase(0, nl + 1);
+                        while (!ln.empty() && ln.back() == '\r') ln.pop_back();
+                        if (ln.empty()) continue;
+                        lastLine = wide(ln);
+                        // "[download]  42.3% of ..." → live percentage
+                        const size_t pc = ln.find('%');
+                        if (ln.rfind("[download]", 0) == 0 &&
+                            pc != std::string::npos && pc >= 4) {
+                            const int pct = atoi(ln.c_str() + 10);
+                            std::lock_guard<std::mutex> lk(a.webMx);
+                            if (job < a.webDls.size())
+                                a.webDls[job].pct = std::clamp(pct, 0, 100);
+                        }
+                    }
+                }
+                WaitForSingleObject(pi.hProcess, INFINITE);
+                GetExitCodeProcess(pi.hProcess, &code);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            } else {
+                lastLine = L"yt-dlp.exe not found — put it next to the app";
+            }
+            if (wr) CloseHandle(wr);
+            CloseHandle(rd);
+        }
+        const bool ok = code == 0 && !lastLine.empty() &&
+                        GetFileAttributesW(lastLine.c_str()) !=
+                            INVALID_FILE_ATTRIBUTES;
+        {
+            std::lock_guard<std::mutex> lk(a.webMx);
+            if (job < a.webDls.size()) {
+                a.webDls[job].state = ok ? 2 : 3;
+                a.webDls[job].pct = ok ? 100 : a.webDls[job].pct;
+                if (ok) a.webDls[job].path = lastLine;
+                else a.webDls[job].error = lastLine.substr(0, 160);
+            }
+        }
+        if (ok) a.webRescan.store(true); // main loop imports the yt folder
+    }
+}
+
+void webEnqueue(App& a, const std::wstring& target, const std::wstring& title) {
+    if (!a.webDlThread.joinable())
+        a.webDlThread = std::thread(webDlWorker, std::ref(a));
+    {
+        std::lock_guard<std::mutex> lk(a.webMx);
+        WebDl d;
+        d.target = target;
+        d.title = title.empty() ? target : title;
+        d.fmt = a.webFmt;
+        a.webDls.push_back(std::move(d));
+    }
+    a.webDlCv.notify_one();
+    a.status = L"download queued: " + (title.empty() ? target : title);
+}
+
+void stopWebWorkers(App& a) {
+    a.webQuit.store(true);
+    a.webDlCv.notify_all();
+    if (a.webSearchThread.joinable()) a.webSearchThread.join();
+    if (a.webDlThread.joinable()) a.webDlThread.join();
+}
+
+void webPoll(App& a) {
+    if (a.webSearchDone.exchange(false)) {
+        std::lock_guard<std::mutex> lk(a.webMx);
+        a.webHits = a.webFound;
+        a.status = a.webErr.empty()
+                       ? std::to_wstring(a.webHits.size()) + L" YouTube results"
+                       : a.webErr;
+    }
+    if (a.webRescan.exchange(false)) {
+        // Fast for the unchanged bulk; registers the folder as a root the
+        // first time, so downloads are ordinary library tracks afterwards.
+        if (!a.scanning.load()) startImport(a, youtubeCacheDir(a.ytDir));
+        else a.webRescan.store(true); // import running: try next tick
+    }
 }
