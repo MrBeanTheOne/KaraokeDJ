@@ -400,20 +400,49 @@ void VideoWindow::drawQrCard(float qx, float qy, float qw, float szQ,
                                 ox + (mx + 1) * cell + 0.5f,
                                 oy + (my + 1) * cell + 0.5f),
                     brush);
+    // Caption box: symmetric around the card (asymmetric clamping shifted
+    // the centered text off the card), as wide as the window edges allow.
+    // The font then SHRINKS until both lines fit — a long localized caption
+    // (French) used to clip at both ends instead.
+    const D2D1_SIZE_F sz2 = rt_->GetSize();
+    const float ext =
+        (std::max)(0.f, (std::min)({80.f, qx - 2, sz2.width - 2 - qx - qw}));
+    const float cl = qx - ext, cr = qx + qw + ext;
+    const auto widthAt = [&](const std::wstring& t, float sz,
+                             DWRITE_FONT_WEIGHT w) {
+        float wd = 0.f;
+        IDWriteTextFormat* mf = nullptr;
+        if (FAILED(dw_->CreateTextFormat(L"Segoe UI", nullptr, w,
+                                         DWRITE_FONT_STYLE_NORMAL,
+                                         DWRITE_FONT_STRETCH_NORMAL, sz, L"",
+                                         &mf)))
+            return wd;
+        IDWriteTextLayout* tl = nullptr;
+        if (SUCCEEDED(dw_->CreateTextLayout(t.c_str(), UINT32(t.size()), mf,
+                                            1e6f, 1e3f, &tl))) {
+            DWRITE_TEXT_METRICS m{};
+            if (SUCCEEDED(tl->GetMetrics(&m))) wd = m.width;
+            tl->Release();
+        }
+        mf->Release();
+        return wd;
+    };
+    const std::wstring& cap = scene_.qrCaption;
+    float fitted = szQ; // text width is ~linear in font size
+    const float boxW = cr - cl;
+    const float wc = widthAt(cap, szQ, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    const float wu = widthAt(qrUrl_, szQ, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    const float wMax = (std::max)(wc, wu);
+    if (wMax > boxW && wMax > 0.f)
+        fitted = (std::max)(8.f, szQ * boxW / wMax);
     IDWriteTextFormat* qf = nullptr;
     if (SUCCEEDED(dw_->CreateTextFormat(
             L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, szQ, L"",
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fitted, L"",
             &qf))) {
         qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
         qf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
         brush->SetColor(D2D1::ColorF(0xE8ECF1));
-        // Clamped to the window: a card near an edge (overlay bottom-left,
-        // waiting-screen corner cells) otherwise clips its centered caption.
-        const D2D1_SIZE_F sz2 = rt_->GetSize();
-        const float cl = (std::max)(2.f, qx - 80),
-                    cr = (std::min)(sz2.width - 2.f, qx + qw + 80);
-        const std::wstring& cap = scene_.qrCaption;
         rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
                        D2D1::RectF(cl, qy + qw + 6, cr,
                                    qy + qw + 6 + szQ * 1.5f),
