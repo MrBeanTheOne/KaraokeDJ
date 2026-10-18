@@ -53,6 +53,10 @@ void Deck::seek(double sec) {
 
 void Deck::workerMain(std::wstring path, bool loopFile) {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    // Audio decode must WIN the CPU on a weak machine: when a software video
+    // decode (or a browser the venue opens) saturates the cores, a normal-
+    // priority audio worker starves the ring and the night audibly stutters.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     {
         MFDecoder dec;
         if (!dec.open(path, rate_, ch_)) {

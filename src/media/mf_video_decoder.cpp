@@ -107,6 +107,11 @@ bool MFVideoDecoder::openReader() {
 
 void MFVideoDecoder::workerMain() {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    // Video LOSES to audio on purpose: on a weak laptop (software H.264
+    // decode, no GPU acceleration) this thread can saturate the cores. Video
+    // degrades gracefully — popDue() drops late frames — but starved audio
+    // stutters, so video decode runs below normal priority.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
     if (!openReader()) {
         state_.store(2, std::memory_order_release);
         CoUninitialize();
