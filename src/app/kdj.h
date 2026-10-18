@@ -127,7 +127,10 @@ struct App {
     int lastFreed = -1;       // deck most recently stopped: next track prefers
                               // the OTHER deck (VDJ handover feel)
     double fadeSec = 3.0;
-    bool automixOn = true; // off = hard cut at end of track (queue continues)
+    bool automixOn = true; // on = timed transitions between the decks;
+                           // off = VDJ manual mode — PLAY opens a deck
+                           // alongside the live one, the crossfader mixes,
+                           // end-of-track still hard-cuts to a lone cue/queue
     // AUTOQUEUE (queue drawer): only when armed does the queue feed the decks
     // (preload + end-of-track pull + auto-start). Off, the queue is just a
     // list being built; AUTOMIX still mixes between the two decks when one is
@@ -504,6 +507,7 @@ void queueSelected(App& a);
 // false when the track cannot be played right now.
 bool ensurePlayable(App& a, const Match& m);
 void playNow(App& a, const Match& m);
+void playDeckDirect(App& a, int d); // dual play: start alongside, no fade
 void dropOnDeck(App& a, int d, const Match& m);
 void clearDeckSlot(App& a, int d);
 void stopDeck(App& a, int d);

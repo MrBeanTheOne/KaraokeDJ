@@ -18,6 +18,12 @@ void Mixer::render(float* out, uint32_t frames, uint32_t ch) {
 
     MixCommand c;
     while (cmds.pop(&c, 1)) {
+        if (c.start) { // dual play: open alongside, no fade, nothing retired
+            decks_[c.toDeck]->playing.store(true, std::memory_order_release);
+            gain_[c.toDeck] = 1.f;
+            activeDeck.store(c.toDeck, std::memory_order_release);
+            continue;
+        }
         fade_.active = true;
         fade_.pos = 0;
         fade_.dur = c.durSamples ? c.durSamples : 1;

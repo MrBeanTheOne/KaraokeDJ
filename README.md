@@ -30,6 +30,9 @@ Settings) and points you at the download when one exists.
 ### 🎛️ Two decks, zero babysitting
 - Automix with configurable fade length, or mix by hand — crossfader fills
   blue (deck A) / red (deck B) from center.
+- **Automix off = true manual mode** (VirtualDJ-style): PLAY opens a deck
+  *alongside* the live one — both decks play at once and the crossfader is
+  the mix. Automation keeps its hands off until one deck stops.
 - **OVERLAY on music videos** (top bar): shows NEXT UP along the top and the
   phone-request QR bottom-left over the playing video. Toggle it off when a
   karaoke video's lyrics need the screen; audio-only tracks always show the

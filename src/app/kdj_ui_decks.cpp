@@ -23,13 +23,16 @@ void drawDeck(App& a, Ui& ui, int d, const D2D1_RECT_F& r) {
             mix(cPanel, ac, a.label[d].empty() ? 0.05f : 0.16f), 9);
     ui.text(rc(x, r.top + 6, w, 14), d == 0 ? L"DECK A" : L"DECK B", 10, ac, 0, true);
     const DeckState st = a.decks[d]->state();
-    const bool cued = !a.label[d].empty() && act != d && st == DeckState::Ready &&
-                      a.pendingFade != d;
+    // playing flag, not act==d: with automix off both decks can be on air at
+    // once (VDJ-style dual play) and the non-active one is still PLAYING.
+    const bool deckLive = a.decks[d]->playing.load();
+    const bool cued = !a.label[d].empty() && act != d && !deckLive &&
+                      st == DeckState::Ready && a.pendingFade != d;
     std::wstring stateTxt = a.label[d].empty() ? L"" :
         st == DeckState::Loading ? L"LOADING" :
         st == DeckState::Error   ? L"ERROR" :
         a.decks[d]->paused.load() ? L"PAUSED" :
-        act == d ? L"PLAYING" : cued ? L"CUED — NEXT" : L"READY";
+        deckLive || act == d ? L"PLAYING" : cued ? L"CUED — NEXT" : L"READY";
     ui.text(rc(x, r.top + 6, w, 14), stateTxt, 10,
             st == DeckState::Error ? cRed
             : stateTxt == L"PLAYING" ? cGreen
@@ -199,8 +202,14 @@ void drawDeck(App& a, Ui& ui, int d, const D2D1_RECT_F& r) {
     const float by = r.bottom - 44;
     if (cued) {
         if (ui.button(110 + d, rc(x, by, 92, 32), L"PLAY ▸", ac, true)) {
-            a.pendingFade = d;
-            a.pendingDur = act < 0 ? 0.3 : (a.automixOn ? a.fadeSec : 0.08);
+            if (!a.automixOn && act >= 0 && act != d) {
+                // automix off = manual decks: PLAY opens this deck ALONGSIDE
+                // the live one (no transition) — ride the crossfader to mix.
+                playDeckDirect(a, d);
+            } else {
+                a.pendingFade = d;
+                a.pendingDur = act < 0 ? 0.3 : (a.automixOn ? a.fadeSec : 0.08);
+            }
         }
     } else {
         const bool paused = a.decks[d]->paused.load();

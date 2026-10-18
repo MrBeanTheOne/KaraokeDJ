@@ -116,6 +116,22 @@ void playNow(App& a, const Match& m) {
     }
 }
 
+// VDJ-style dual play (automix off): start this cued deck ALONGSIDE whatever
+// is playing — no fade, nothing retired, the crossfader is the mix.
+void playDeckDirect(App& a, int d) {
+    if (a.label[d].empty() || a.decks[d]->state() != DeckState::Ready) return;
+    if (a.mixer.fadeTo.load() >= 0 || a.pendingFade >= 0) {
+        a.status = L"transition in progress";
+        return;
+    }
+    a.autoCued[d] = false; // it is on air now, not "the next song"
+    MixCommand c{d, 0, FadeCurve::EqualPower, true};
+    a.mixer.cmds.push(&c, 1);
+    a.status = L"deck " + std::wstring(d ? L"B" : L"A") +
+               L" playing — crossfader mixes the two decks";
+    if (a.deckMatch[d].id) a.playedTonight.insert(a.deckMatch[d].id);
+}
+
 // Drop on a deck: cue it there without playing (it becomes the next song);
 // if that deck is busy, it goes to the front of the queue instead.
 void dropOnDeck(App& a, int d, const Match& m) {
@@ -162,8 +178,14 @@ void stopDeck(App& a, int d) {
     // pending fade, the preloader cannot pull a fresh queue track first.
     // With no cue anywhere, the queue feeds the empty deck as usual.
     const int other = 1 - d;
-    if (wasOnAir && !a.label[other].empty() && a.pendingFade < 0 &&
-        a.decks[other]->state() != DeckState::Error) {
+    if (wasOnAir && !a.label[other].empty() &&
+        a.decks[other]->playing.load()) {
+        // Dual play: the other deck is ALREADY audible — fading "to" it would
+        // dip it to silence first. Just hand it the active slot.
+        a.mixer.activeDeck.store(other);
+        a.mixer.crossfader.store(other == 0 ? 0.f : 1.f);
+    } else if (wasOnAir && !a.label[other].empty() && a.pendingFade < 0 &&
+               a.decks[other]->state() != DeckState::Error) {
         a.pendingFade = other;
         a.pendingDur = 0.3;
     }
@@ -583,10 +605,32 @@ void engineTick(App& a) {
             }
         }
     }
+    // Dual play: when the active deck drains while the other deck is still
+    // playing (both started by hand, automix off), the survivor takes the
+    // active slot — video and end-of-track logic follow it, the crossfader
+    // parks on it so the ended deck can be scrubbed/reloaded silently.
+    {
+        const int act = a.mixer.activeDeck.load();
+        const int oth = 1 - act;
+        if (act >= 0 && a.pendingFade < 0 && a.mixer.fadeTo.load() < 0 &&
+            a.decks[act]->eos.load() && a.decks[act]->remainingSec() <= 0.0 &&
+            !a.label[oth].empty() && a.decks[oth]->playing.load() &&
+            !a.decks[oth]->eos.load()) {
+            a.decks[act]->playing.store(false);
+            a.mixer.crossfader.store(oth == 0 ? 0.f : 1.f);
+            a.mixer.activeDeck.store(oth);
+        }
+    }
     // Queue / cued-deck advance.
     if (a.pendingFade < 0 && !a.fadePosted && a.mixer.fadeTo.load() < 0) {
         const int act = a.mixer.activeDeck.load();
-        if (act >= 0) {
+        // A deck the operator started by hand (dual play) is NOT "the next
+        // song" — automation keeps its hands off both decks until one of
+        // them is no longer playing.
+        const int dualIdle = act >= 0 ? 1 - act : -1;
+        const bool dualPlay = dualIdle >= 0 && !a.label[dualIdle].empty() &&
+                              a.decks[dualIdle]->playing.load();
+        if (act >= 0 && !dualPlay) {
             const int idle = 1 - act;
             const bool cued = !a.label[idle].empty() &&
                               a.decks[idle]->state() == DeckState::Ready;
@@ -623,7 +667,8 @@ void engineTick(App& a) {
                     }
                 }
             }
-        } else { // nothing playing: auto-start a queue-cued deck (manual cues wait)
+        } else if (act < 0) { // nothing playing: auto-start a queue-cued deck
+                              // (manual cues wait; dual play lands above)
             for (int d = 0; d < 2 && a.autoQueueOn; ++d) {
                 if (a.autoCued[d] && !a.label[d].empty() &&
                     a.decks[d]->state() == DeckState::Ready) {

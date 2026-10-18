@@ -14,6 +14,11 @@ struct MixCommand {
     int toDeck = 0;
     uint64_t durSamples = 1; // in frames
     FadeCurve curve = FadeCurve::EqualPower;
+    // start=true: open the deck at full envelope ALONGSIDE whatever plays —
+    // no fade, the other deck is untouched (VDJ-style manual dual-deck play,
+    // automix off; the crossfader is the mix). The started deck becomes the
+    // active one, so video and end-of-track logic follow the newest start.
+    bool start = false;
 };
 
 class Mixer {
