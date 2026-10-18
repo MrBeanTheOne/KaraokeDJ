@@ -11,14 +11,19 @@
 // correction made after the track was loaded did nothing until the next load.
 // Never yanks a deck that is audibly playing — only one that is cued, or one
 // still inside the intro it was about to skip anyway.
-void applyCueIn(App& a, int d) {
+void applyCueIn(App& a, int d, bool duringFade) {
     if (a.label[d].empty()) return;
     const double sec = double((std::max)(int64_t(0), a.cueIn[d])) / 1000.0;
     const uint64_t target = uint64_t(sec * kRate);
     const uint64_t now = a.decks[d]->framesPlayed.load();
     if ((now > target ? now - target : target - now) < kRate / 4) return;
     if (a.decks[d]->playing.load() && now >= target) return;
-    if (a.pendingFade == d || a.mixer.fadeTo.load() == d) return;
+    // Marker DRAGS must not yank a deck mid-transition; the smart scan's own
+    // result passes duringFade=true — the deck is fading in through silence,
+    // and jumping it to the marker NOW beats jumping at fade completion
+    // (which read as the playhead crawling through silence, then teleporting).
+    if (!duringFade && (a.pendingFade == d || a.mixer.fadeTo.load() == d))
+        return;
     a.decks[d]->seek(sec);
     if (a.hasVid[d]) a.vdec[d].seek(int64_t(a.cueIn[d]) * 10000);
 }
@@ -737,7 +742,9 @@ void engineTick(App& a) {
             const double outSec = (std::min)(dur, (last + 1) * binSec + 0.5);
             if (inSec > 1.0) a.cueIn[d] = int64_t(inSec * 1000);
             if (dur - outSec > 1.5) a.cueOut[d] = int64_t(outSec * 1000);
-            applyCueIn(a, d);
+            // duringFade: a Mix Now starts the fade before this scan lands —
+            // jump to the marker the moment it is known, mid-fade included.
+            applyCueIn(a, d, true);
         }
         a.smartCueSet[d] = true;
     }

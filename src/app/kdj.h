@@ -561,7 +561,9 @@ void dropOnDeck(App& a, int d, const Match& m);
 void clearDeckSlot(App& a, int d);
 void stopDeck(App& a, int d);
 void seekFrac(App& a, int d, float frac);
-void applyCueIn(App& a, int d); // re-cue after the START marker moves
+// Re-cue to the START marker. duringFade=true (the smart scan's own result)
+// may seek a deck that is still fading in; marker drags must not.
+void applyCueIn(App& a, int d, bool duringFade = false);
 void setSingerStatus(App& a, int64_t itemId, const char* status);
 void singNow(App& a, const SingerRow& row);
 void addToRotationAs(App& a, const Match& m, const std::wstring& singer);
