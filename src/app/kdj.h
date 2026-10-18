@@ -432,6 +432,7 @@ struct App {
     // time (venue bandwidth), progress visible per item in the view.
     std::vector<WebHit> webHits; // UI thread: last adopted results
     int webFmt = 0;              // 0 MP4 720p, 1 MP4 best, 2 MP3, 3 WAV
+    int webTab = 0;              // sidebar WEB section: 0 search, 1 downloads
     std::mutex webMx;            // guards webFound/webErr/webDls
     std::vector<WebHit> webFound;
     std::wstring webErr;

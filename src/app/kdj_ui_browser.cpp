@@ -71,8 +71,21 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
         swprintf(hx, 48, L"Excluded (%d)", a.hiddenCount);
         rows.push_back({hx, L"##hidden", 0, 0, false, false, NavMode::Library, -1});
     }
-    rows.push_back({L"Web search (YouTube)", L"", 0, 0, false, false,
-                    NavMode::Web, -1});
+    rows.push_back({L"WEB", L"", 1});
+    rows.push_back({L"Search YouTube", L"", 0, 0, false, false, NavMode::Web, -1});
+    {
+        int active = 0, done = 0; // badge: what the strip holds right now
+        {
+            std::lock_guard<std::mutex> lk(a.webMx);
+            for (const WebDl& d : a.webDls)
+                (d.state <= 1 ? active : done)++;
+        }
+        wchar_t wd[48];
+        if (active > 0) swprintf(wd, 48, L"Downloads (%d active)", active);
+        else if (done > 0) swprintf(wd, 48, L"Downloads (%d)", done);
+        else swprintf(wd, 48, L"Downloads");
+        rows.push_back({wd, L"##dls", 0, 0, false, false, NavMode::Web, -1});
+    }
     rows.push_back({L"PLAYLISTS", L"", 1});
     for (auto& [name, id] : a.playlists)
         rows.push_back({name, L"", 0, 0, false, false, NavMode::Playlist, id});
@@ -130,6 +143,8 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
             (row.mode == a.nav) &&
             (row.mode != NavMode::Playlist || row.plId == a.navPlaylist) &&
             (row.mode != NavMode::Folder || row.folder == a.navFolder) &&
+            (row.mode != NavMode::Web ||
+             (row.folder == L"##dls") == (a.webTab == 1)) &&
             (row.mode != NavMode::Library ||
              (row.folder == L"##hidden") == a.showHidden);
         if (current) ui.rect(rr, cSel, 4);
@@ -164,6 +179,8 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
                 a.navPlaylist = row.plId;
                 a.navPlaylistName = row.mode == NavMode::Playlist ? row.text : L"";
                 a.navFolder = row.mode == NavMode::Folder ? row.folder + L"\\" : L"";
+                if (row.mode == NavMode::Web)
+                    a.webTab = row.folder == L"##dls" ? 1 : 0;
                 a.showHidden =
                     row.mode == NavMode::Library && row.folder == L"##hidden";
                 a.focus = Focus::None;
@@ -183,121 +200,144 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
 // Remove library rows whose file is gone. Rows on an absent DRIVE (unplugged
 // external disk) are left alone — a disconnected library is not a deleted one.
 
-// WEB view: search YouTube (Enter), pick a format, download with visible
-// progress. Finished files import into the library by themselves.
+// WEB section, two sidebar entries: Search YouTube (results + GET) and
+// Downloads (live progress strip). Finished files import by themselves.
 static void drawWebView(App& a, Ui& ui, const D2D1_RECT_F& r) {
-    ui.text(rc(r.left + 14, r.top + 8, 86, 26), L"WEB", 12, cDim, 0, true);
-    const D2D1_RECT_F box = rc(r.left + 100, r.top + 8, r.right - r.left - 330, 26);
-    ui.rect(box, cInset, 7);
-    ui.frameRect(box, a.focus == Focus::Search ? cAccent : cBorder, 5);
-    ui.text(rc(box.left + 8, box.top, box.right - box.left - 12, 26),
-            a.search + (a.focus == Focus::Search && caretOn() ? L"▏" : L""),
-            13, cText, 0, false);
-    if (ui.in.pressed && hit(box, ui.in.pressX, ui.in.pressY))
-        a.focus = Focus::Search;
-    if (ui.button(308, rc(r.right - 222, r.top + 8, 100, 26),
-                  a.webSearchBusy.load() ? L"SEARCHING…" : L"SEARCH", cAccent,
-                  true) &&
-        !a.webSearchBusy.load())
-        webSearch(a, a.search);
+    const float rowH = 26;
+    if (a.webTab == 0) { // ---- Search YouTube
+        ui.text(rc(r.left + 14, r.top + 8, 86, 26), L"YOUTUBE", 12, cDim, 0, true);
+        const D2D1_RECT_F box =
+            rc(r.left + 100, r.top + 8, r.right - r.left - 220, 26);
+        ui.rect(box, cInset, 7);
+        ui.frameRect(box, a.focus == Focus::Search ? cAccent : cBorder, 5);
+        ui.text(rc(box.left + 8, box.top, box.right - box.left - 12, 26),
+                a.search + (a.focus == Focus::Search && caretOn() ? L"▏" : L""),
+                13, cText, 0, false);
+        if (ui.in.pressed && hit(box, ui.in.pressX, ui.in.pressY))
+            a.focus = Focus::Search;
+        if (ui.button(308, rc(r.right - 112, r.top + 8, 100, 26),
+                      a.webSearchBusy.load() ? L"SEARCHING…" : L"SEARCH",
+                      cAccent, true) &&
+            !a.webSearchBusy.load())
+            webSearch(a, a.search);
+        // Format row: the quality every GET from here on will use.
+        ui.text(rc(r.left + 14, r.top + 40, 86, 24), L"FORMAT", 10, cDim, 0, true);
+        for (int f = 0; f < 4; ++f) {
+            if (ui.toggle(320 + f, rc(r.left + 100 + f * 96, r.top + 40, 88, 24),
+                          kWebFmtNames[f], a.webFmt == f, cGreen))
+                a.webFmt = f;
+        }
+        ui.text(rc(r.left + 100 + 4 * 96 + 10, r.top + 40,
+                   (std::max)(0.f, r.right - (r.left + 100 + 4 * 96 + 24)), 24),
+                L"Enter = search · GET sends to WEB ▸ Downloads", 10, cDim, 0,
+                false);
+
+        const D2D1_RECT_F list = rc(r.left + 6, r.top + 72, r.right - r.left - 12,
+                                    r.bottom - r.top - 78);
+        ui.clipPush(list);
+        const size_t count = a.webHits.size();
+        if (hit(list, ui.in.mx, ui.in.my) && ui.in.wheel != 0)
+            a.libScroll =
+                std::clamp(a.libScroll - ui.in.wheel * 3, 0.f,
+                           (std::max)(0.f, float(count) -
+                                               (list.bottom - list.top) / rowH));
+        for (size_t i = 0; i < count; ++i) {
+            const float y = list.top + (float(i) - a.libScroll) * rowH;
+            if (y + rowH < list.top || y > list.bottom) continue;
+            const D2D1_RECT_F row =
+                rc(list.left, y, list.right - list.left, rowH - 2);
+            if (i & 1) ui.rect(row, col(0x1A1B1F), 4);
+            const WebHit& h = a.webHits[i];
+            ui.text(rc(row.left + 8, y, 52, rowH),
+                    h.durSec > 0 ? fmtTime(double(h.durSec)) : L"", 12, cDim, 0,
+                    false);
+            ui.text(rc(row.left + 66, y, row.right - row.left - 196, rowH),
+                    h.title + (h.channel.empty() ? L"" : L"   —   " + h.channel),
+                    12, cText, 0, false);
+            if (ui.button(800 + int(i), rc(row.right - 120, y + 1, 108, 22),
+                          std::wstring(L"GET ") + kWebFmtNames[a.webFmt],
+                          cAccent))
+                webEnqueue(a, h.id, h.title);
+        }
+        if (!count)
+            ui.text(rc(list.left + 8, list.top + 10,
+                       list.right - list.left - 16, 20),
+                    a.webSearchBusy.load()
+                        ? L"searching…"
+                        : L"search YouTube above — results appear here",
+                    12, cDim, 0, false);
+        ui.clipPop();
+        scrollbar(a, ui, 702, list, count, rowH, a.libScroll);
+        return;
+    }
+
+    // ---- Downloads
+    ui.text(rc(r.left + 14, r.top + 8, 300, 26), L"WEB DOWNLOADS", 12, cDim, 0,
+            true);
     if (ui.button(309, rc(r.right - 112, r.top + 8, 100, 26), L"CLEAR DONE",
                   cDim)) {
         std::lock_guard<std::mutex> lk(a.webMx);
         a.webDls.erase(std::remove_if(a.webDls.begin(), a.webDls.end(),
-                                      [](const WebDl& d) {
-                                          return d.state >= 2;
-                                      }),
+                                      [](const WebDl& d) { return d.state >= 2; }),
                        a.webDls.end());
     }
-    // Format row: the quality every GET from here on will use.
-    ui.text(rc(r.left + 14, r.top + 40, 86, 24), L"FORMAT", 10, cDim, 0, true);
-    for (int f = 0; f < 4; ++f) {
-        if (ui.toggle(320 + f, rc(r.left + 100 + f * 96, r.top + 40, 88, 24),
-                      kWebFmtNames[f], a.webFmt == f, cGreen))
-            a.webFmt = f;
-    }
-    ui.text(rc(r.left + 100 + 4 * 96 + 10, r.top + 40,
-               (std::max)(0.f, r.right - (r.left + 100 + 4 * 96 + 24)), 24),
-            L"type a search + Enter · downloads land in the library",
+    ui.text(rc(r.left + 14, r.top + 40, r.right - r.left - 28, 20),
+            L"finished downloads import into the library by themselves — "
+            L"+ QUEUE puts one straight into tonight's queue",
             10, cDim, 0, false);
-
-    // Snapshot the download strip under the lock, render without it.
-    std::vector<WebDl> dls;
+    std::vector<WebDl> dls; // snapshot under the lock, render without it
     {
         std::lock_guard<std::mutex> lk(a.webMx);
         dls.assign(a.webDls.begin(), a.webDls.end());
     }
-    const D2D1_RECT_F list = rc(r.left + 6, r.top + 72, r.right - r.left - 12,
-                                r.bottom - r.top - 78);
+    const D2D1_RECT_F list = rc(r.left + 6, r.top + 68, r.right - r.left - 12,
+                                r.bottom - r.top - 74);
     ui.clipPush(list);
-    const float rowH = 26;
-    const size_t nHead = dls.empty() ? 0 : dls.size() + 1; // +1 section label
-    const size_t count = nHead + a.webHits.size();
     if (hit(list, ui.in.mx, ui.in.my) && ui.in.wheel != 0)
-        a.libScroll = std::clamp(a.libScroll - ui.in.wheel * 3, 0.f,
-                                 (std::max)(0.f, float(count) -
-                                                     (list.bottom - list.top) / rowH));
-    for (size_t i = 0; i < count; ++i) {
+        a.libScroll =
+            std::clamp(a.libScroll - ui.in.wheel * 3, 0.f,
+                       (std::max)(0.f, float(dls.size()) -
+                                           (list.bottom - list.top) / rowH));
+    for (size_t i = 0; i < dls.size(); ++i) {
         const float y = list.top + (float(i) - a.libScroll) * rowH;
         if (y + rowH < list.top || y > list.bottom) continue;
         const D2D1_RECT_F row = rc(list.left, y, list.right - list.left, rowH - 2);
         if (i & 1) ui.rect(row, col(0x1A1B1F), 4);
-        if (nHead && i == 0) { // downloads section label
-            ui.text(rc(row.left + 8, y, 300, rowH), L"DOWNLOADS", 10, cDim, 0,
-                    true);
-            continue;
+        const WebDl& d = dls[i];
+        const D2D1_COLOR_F sc = d.state == 3   ? cRed
+                                : d.state == 2 ? cGreen
+                                               : cAccent;
+        const std::wstring st = d.state == 0   ? L"WAITING"
+                                : d.state == 1 ? std::to_wstring(d.pct) + L"%"
+                                : d.state == 2 ? L"DONE"
+                                               : L"FAILED";
+        ui.text(rc(row.left + 8, y, 64, rowH), st, 11, sc, 0, true);
+        if (d.state == 1) { // slim progress bar along the row's bottom edge
+            ui.rect(rc(row.left, y + rowH - 5, row.right - row.left, 2),
+                    cBorder, 1);
+            ui.rect(rc(row.left, y + rowH - 5,
+                       (row.right - row.left) * d.pct / 100.f, 2),
+                    cAccent, 1);
         }
-        if (nHead && i <= dls.size()) { // one download row
-            const WebDl& d = dls[i - 1];
-            const D2D1_COLOR_F sc = d.state == 3   ? cRed
-                                    : d.state == 2 ? cGreen
-                                                   : cAccent;
-            const std::wstring st =
-                d.state == 0   ? L"WAITING"
-                : d.state == 1 ? std::to_wstring(d.pct) + L"%"
-                : d.state == 2 ? L"DONE"
-                               : L"FAILED";
-            ui.text(rc(row.left + 8, y, 64, rowH), st, 11, sc, 0, true);
-            if (d.state == 1) { // slim progress bar under the whole row
-                ui.rect(rc(row.left, y + rowH - 5, row.right - row.left, 2),
-                        cBorder, 1);
-                ui.rect(rc(row.left, y + rowH - 5,
-                           (row.right - row.left) * d.pct / 100.f, 2),
-                        cAccent, 1);
+        ui.text(rc(row.left + 80, y, row.right - row.left - 200, rowH),
+                d.state == 3 ? d.title + L"  —  " + d.error : d.title, 12,
+                d.state == 3 ? cRed : cText, 0, false);
+        if (d.state == 2 &&
+            ui.button(860 + int(i), rc(row.right - 96, y + 1, 84, 22),
+                      L"+ QUEUE", cGreen)) {
+            const Match m = matchFromPath(a, d.path);
+            if (ensurePlayable(a, m)) {
+                a.queue.push_back(m);
+                a.status = L"queued: " + m.label;
             }
-            ui.text(rc(row.left + 80, y, row.right - row.left - 200, rowH),
-                    d.state == 3 ? d.title + L"  —  " + d.error : d.title, 12,
-                    d.state == 3 ? cRed : cText, 0, false);
-            if (d.state == 2 &&
-                ui.button(860 + int(i), rc(row.right - 96, y + 1, 84, 22),
-                          L"+ QUEUE", cGreen)) {
-                const Match m = matchFromPath(a, d.path);
-                if (ensurePlayable(a, m)) {
-                    a.queue.push_back(m);
-                    a.status = L"queued: " + m.label;
-                }
-            }
-            continue;
         }
-        const WebHit& h = a.webHits[i - nHead]; // one search result
-        ui.text(rc(row.left + 8, y, 52, rowH),
-                h.durSec > 0 ? fmtTime(double(h.durSec)) : L"", 12, cDim, 0,
-                false);
-        ui.text(rc(row.left + 66, y, row.right - row.left - 196, rowH),
-                h.title + (h.channel.empty() ? L"" : L"   —   " + h.channel),
-                12, cText, 0, false);
-        if (ui.button(800 + int(i), rc(row.right - 120, y + 1, 108, 22),
-                      std::wstring(L"GET ") + kWebFmtNames[a.webFmt], cAccent))
-            webEnqueue(a, h.id, h.title);
     }
-    if (!count)
+    if (dls.empty())
         ui.text(rc(list.left + 8, list.top + 10, list.right - list.left - 16, 20),
-                a.webSearchBusy.load()
-                    ? L"searching…"
-                    : L"search YouTube above — results appear here",
+                L"nothing here yet — GET a result from WEB ▸ Search YouTube",
                 12, cDim, 0, false);
     ui.clipPop();
-    scrollbar(a, ui, 702, list, count, rowH, a.libScroll);
+    scrollbar(a, ui, 702, list, dls.size(), rowH, a.libScroll);
 }
 
 void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {

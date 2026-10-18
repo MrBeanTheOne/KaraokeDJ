@@ -994,11 +994,16 @@ static const wchar_t* kWebFmtArgs[4] = {
 // title actually contains (\" \\ \uXXXX). Not a JSON parser; doesn't need
 // to be — yt-dlp emits one flat object per line.
 static std::wstring jsonStr(const std::string& line, const char* key) {
-    const std::string pat = std::string("\"") + key + "\":\"";
-    const size_t b = line.find(pat);
+    const std::string pat = std::string("\"") + key + "\":";
+    size_t b = line.find(pat);
     if (b == std::string::npos) return L"";
+    b += pat.size();
+    // yt-dlp emits json.dumps defaults: a space after the colon
+    while (b < line.size() && line[b] == ' ') ++b;
+    if (b >= line.size() || line[b] != '"') return L"";
+    ++b;
     std::string raw;
-    for (size_t i = b + pat.size(); i < line.size(); ++i) {
+    for (size_t i = b; i < line.size(); ++i) {
         const char c = line[i];
         if (c == '"') break;
         if (c != '\\') { raw += c; continue; }

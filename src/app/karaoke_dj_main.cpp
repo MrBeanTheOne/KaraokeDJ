@@ -496,6 +496,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             } else if (a.focus == Focus::Search && a.search.rfind(L"http", 0) == 0) {
                 webEnqueue(a, a.search, L""); // pasted URL → WEB download strip
                 a.nav = NavMode::Web;         // progress is visible there
+                a.webTab = 1;
                 a.search.clear();
             } else if (a.nav == NavMode::Web) {
                 webSearch(a, a.search); // Enter = search YouTube
