@@ -290,12 +290,14 @@ void drawMixer(App& a, Ui& ui, const D2D1_RECT_F& r) {
     ui.text(rc(cx + 30, r.top + 160, 40, 14), L"B", 11, cB, 1, true);
 
     // Crossfader: deck-colored center fill (A blue left, B red right). During
-    // a transition the thumb ANIMATES across at the fade's own pace — display
-    // only, so the audio fade gains are never doubled up.
+    // an AUTOMIX transition the thumb ANIMATES across at the fade's own pace —
+    // display only, so the audio fade gains are never doubled up. In manual
+    // mix the fader truly never moves (fades don't park it), so animating the
+    // thumb there showed a slide-out-snap-back that wasn't happening.
     float xf = a.mixer.crossfader.load();
     const int ftd = a.mixer.fadeTo.load();
     const float ftt = a.mixer.fadeT.load();
-    const bool fading = ftd >= 0 && ftt >= 0.f;
+    const bool fading = ftd >= 0 && ftt >= 0.f && a.automixOn;
     float shown = fading ? (ftd == 1 ? ftt : 1.f - ftt) : xf;
     if (ui.sliderH(202, rc(r.left + 16, r.top + 176, r.right - r.left - 32, 26),
                    shown, cB, true, &cA) &&
