@@ -46,10 +46,12 @@ Settings) and points you at the download when one exists.
 - **Hardware video decode** (Media Foundation + D3D11): smooth video karaoke
   on a weak laptop CPU.
 - Plays **MP3+G** (mp3/cdg pairs), **karaoke ZIPs**, **video files**, plain
-  audio — and YouTube, via the built-in **WEB view**: search YouTube from the
-  sidebar, pick MP4 720p / MP4 best / MP3 / WAV, watch the download progress,
-  and the file imports into the library by itself. Pasted links land in the
-  same download strip.
+  audio — and YouTube, via the built-in **WEB section**: search YouTube from
+  the sidebar with **thumbnails**, tick videos and GET them in one go, pick
+  MP4 720p / MP4 best / MP3 / WAV per video from a dropdown, watch live
+  download progress, and files import into the library by themselves
+  (already-downloaded videos are badged and skipped). Pasted links land in
+  the same download strip.
 - **Key change** on each deck for singers who need the song a step down: the
   readout shows the song's **actual musical key** (detected automatically in
   the background) and `−`/`+` move it, so you set *Am → Gm*, not "minus two".
@@ -152,10 +154,14 @@ Settings) and points you at the download when one exists.
   deck, `Ctrl+N` next singer, `↑`/`↓` walk the track list, `Enter` queue,
   `PgDn` skip, `Del` remove from queue, `Esc` back out.
 - **Profile transfer**: export settings, playlists, markers, tags, BPM,
-  detected keys — and the **whole library** — to a single file. Import it on
-  a fresh install and everything is there without a rescan; if the drive
-  letter differs, right-click the folder in the sidebar → relocate. Set up
-  once, run anywhere (venue computers included).
+  detected keys, the **whole library** — and the **waiting-screen design,
+  logo and background images included** — to a single file. Import it on a
+  fresh install and everything is there without a rescan; if the drive letter
+  differs, right-click the folder in the sidebar → relocate. Set up once, run
+  anywhere (venue computers included).
+- **Waiting-screen presets, one per venue** (Settings → Waiting Screen →
+  PRESETS): save the whole look under the venue's name and load it back in
+  one click. Presets travel inside the profile, images and all.
 
 ### 📱 Phone requests <sub>(optional, off by default)</sub>
 

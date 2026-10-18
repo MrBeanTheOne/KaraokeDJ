@@ -343,6 +343,37 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
         contentH = (y + scroll) - r.top + 16;
         return;
     }
+    { // venue presets: save the whole design under a name, load it in a click
+        ui.text(rc(x, y, 90, 26), L"PRESETS", 10, cDim, 0, true);
+        float px2 = x + 90;
+        if (ui.button(670, rc(px2, y, 96, 26), L"+ SAVE AS…", cGreen)) {
+            a.prompt = App::Prompt::IdlePresetSave;
+            a.promptText.clear();
+        }
+        px2 += 104;
+        const int nShow = (std::min)(int(a.idlePresets.size()), 10);
+        for (int k = 0; k < nShow; ++k) {
+            const std::wstring& name = a.idlePresets[k];
+            const float bw2 = (std::min)(150.f, 24 + name.size() * 8.f);
+            if (px2 + bw2 + 26 > x + w) break; // row full: rest hidden
+            if (ui.button(672 + k * 2, rc(px2, y, bw2, 26), name, cAccent))
+                idlePresetApply(a, name);
+            if (ui.button(673 + k * 2, rc(px2 + bw2 + 2, y, 22, 26), L"✕",
+                          cRed)) {
+                a.confirmPath = name;
+                askConfirm(a, App::ConfirmAction::DeleteIdlePreset,
+                           L"DELETE WAITING-SCREEN PRESET",
+                           L"Delete \"" + name + L"\"?",
+                           L"The current waiting screen is not changed.");
+            }
+            px2 += bw2 + 30;
+        }
+        if (a.idlePresets.empty())
+            ui.text(rc(px2, y, (std::max)(0.f, x + w - px2), 26),
+                    L"save this design per venue — travels in the profile",
+                    10, cDim, 0, false);
+        y += 34;
+    }
     const auto textRow = [&](const wchar_t* label, std::wstring& val,
                              int focusId, const wchar_t* hint) {
         ui.text(rc(x, y, 190, 26), label, 12, cText, 0, false);

@@ -34,9 +34,10 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.queueOpen = getSetting(a.db, "queue_open", "1") == "1";
     a.sideW = std::clamp(float(atof(getSetting(a.db, "side_w", "220").c_str())), 160.f,
                          420.f);
-    // min fits the queue header buttons (AUTOQUEUE..»); heals saved widths
-    a.queueW = std::clamp(float(atof(getSetting(a.db, "queue_w", "340").c_str())),
-                          340.f, 560.f);
+    // min fits "QUEUE (NNN)" + the header buttons (AUTOQUEUE..»); heals
+    // saved widths from older builds
+    a.queueW = std::clamp(float(atof(getSetting(a.db, "queue_w", "430").c_str())),
+                          430.f, 560.f);
     { // queue columns: plain width shares, "0.50,0.32,0.18"
         const std::string qs = getSetting(a.db, "queue_cols", "");
         float f[App::kQueueCols]{};
@@ -135,6 +136,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     }
     a.videoFit = std::clamp(atoi(getSetting(a.db, "video_fit", "0").c_str()), 0, 2);
     a.videoOverlayOn = getSetting(a.db, "video_overlay", "0") == "1";
+    idlePresetRefresh(a);
     a.audioDevice = getSetting(a.db, "audio_device", "");
     a.winMax = getSetting(a.db, "win_max", "1") == "1"; // maximized by default
     a.appFull = getSetting(a.db, "win_full", "0") == "1"; // showtime mode
@@ -435,6 +437,103 @@ void pollSearch(App& a) {
     if (a.selLib >= 0) a.selRows.insert(a.selLib);
     a.libScroll = std::clamp(a.libScroll, 0.f,
                              (std::max)(0.f, float(a.results.size()) - 1));
+}
+
+// ------------------------------------------- waiting-screen venue presets
+// One per venue: title, message, element layout, logo, background — stored as
+// a settings row "idlepre_<name>" with the five fields newline-joined (the
+// inputs are single-line, so '\n' can't occur inside them).
+
+std::wstring idleAssetDir() {
+    wchar_t buf[MAX_PATH]{};
+    const DWORD n = GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
+    std::wstring dir = n ? std::wstring(buf) + L"\\KaraokeDJ" : L".";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    dir += L"\\idle";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    return dir;
+}
+
+static std::string idleElemsString(const App& a) {
+    std::string es;
+    char eb[32];
+    for (int k = 0; k < 6; ++k) {
+        snprintf(eb, 32, "%s%d:%d:%d", k ? "," : "", a.idleElems[k].on ? 1 : 0,
+                 a.idleElems[k].pos, a.idleElems[k].size);
+        es += eb;
+    }
+    return es;
+}
+
+static void idleElemsParse(App& a, const std::string& es) {
+    int idx = 0;
+    size_t pos = 0;
+    while (idx < 6 && pos < es.size()) {
+        int on = 1, pp = 4, sz = 1;
+        if (sscanf_s(es.c_str() + pos, "%d:%d:%d", &on, &pp, &sz) == 3) {
+            a.idleElems[idx].on = on != 0;
+            a.idleElems[idx].pos = std::clamp(pp, 0, 8);
+            a.idleElems[idx].size = std::clamp(sz, 0, 2);
+            ++idx;
+        }
+        const size_t c = es.find(',', pos);
+        if (c == std::string::npos) break;
+        pos = c + 1;
+    }
+}
+
+void idlePresetRefresh(App& a) {
+    a.idlePresets.clear();
+    Db::Stmt q;
+    a.db.prepare(q, "SELECT key FROM settings WHERE key LIKE 'idlepre!_%' "
+                    "ESCAPE '!' ORDER BY key");
+    while (q.step()) a.idlePresets.push_back(wide(q.colText(0).substr(8)));
+}
+
+void idlePresetSave(App& a, const std::wstring& name) {
+    if (name.empty()) return;
+    const std::string v = utf8(a.idleTitle) + "\n" + utf8(a.idleSub) + "\n" +
+                          idleElemsString(a) + "\n" + utf8(a.idleLogoPath) +
+                          "\n" + utf8(a.idleBgPath);
+    setSetting(a.db, ("idlepre_" + utf8(name)).c_str(), v);
+    idlePresetRefresh(a);
+    a.status = L"waiting-screen preset saved: " + name;
+}
+
+bool idlePresetApply(App& a, const std::wstring& name) {
+    const std::string v =
+        getSetting(a.db, ("idlepre_" + utf8(name)).c_str(), "");
+    if (v.empty()) return false;
+    std::string part[5];
+    size_t at = 0;
+    for (int k = 0; k < 5; ++k) {
+        const size_t e = v.find('\n', at);
+        part[k] = v.substr(at, e == std::string::npos ? e : e - at);
+        if (e == std::string::npos) break;
+        at = e + 1;
+    }
+    a.idleTitle = wide(part[0]);
+    a.idleSub = wide(part[1]);
+    idleElemsParse(a, part[2]);
+    a.idleLogoPath = wide(part[3]);
+    a.idleLogoLoaded =
+        !a.idleLogoPath.empty() && loadImageFile(a.idleLogoPath, a.idleLogo);
+    if (!a.idleLogoLoaded) a.idleLogoPath.clear();
+    a.idleBgPath = wide(part[4]);
+    a.idleBgLoaded =
+        !a.idleBgPath.empty() && loadImageFile(a.idleBgPath, a.idleBg, 1920);
+    if (!a.idleBgLoaded) a.idleBgPath.clear();
+    a.status = L"waiting screen: " + name;
+    return true;
+}
+
+void idlePresetDelete(App& a, const std::wstring& name) {
+    Db::Stmt q;
+    a.db.prepare(q, "DELETE FROM settings WHERE key=?1");
+    q.bind(1, "idlepre_" + utf8(name));
+    q.run();
+    idlePresetRefresh(a);
+    a.status = L"preset deleted: " + name;
 }
 
 void reloadBrowser(App& a) {

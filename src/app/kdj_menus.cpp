@@ -10,8 +10,13 @@ int showMenu(HWND hwnd, float scale, float cx, float cy,
                     uiTr(items[i]).c_str());
     POINT pt{LONG(cx * scale), LONG(cy * scale)}; // DIPs -> physical client
     ClientToScreen(hwnd, &pt);
+    // Borderless fullscreen (showtime): without foreground activation a popup
+    // menu can dismiss instantly or open behind the window. The WM_NULL after
+    // is the other half of the classic fix (menu teardown needs a message).
+    SetForegroundWindow(hwnd);
     const int r = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hwnd,
                                  nullptr);
+    PostMessageW(hwnd, WM_NULL, 0, 0);
     DestroyMenu(m);
     return r - 1;
 }
@@ -47,8 +52,10 @@ int showTrackMenu(App& a, HWND hwnd, float cx, float cy,
     }
     POINT pt{LONG(cx * a.uiScale), LONG(cy * a.uiScale)}; // DIPs -> physical
     ClientToScreen(hwnd, &pt);
+    SetForegroundWindow(hwnd); // see showMenu: showtime popup-menu fix
     const int r = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hwnd,
                                  nullptr);
+    PostMessageW(hwnd, WM_NULL, 0, 0);
     DestroyMenu(m); // destroys the submenu too
     return r - 1;
 }
@@ -576,6 +583,15 @@ void handleMenu(App& a, HWND hwnd) {
                        L"Tonight's play history and the played-tonight dots reset.",
                        L"Older history is kept.");
         }
+    } else if (req.kind == MenuReq::WebFmt && req.index >= 0 &&
+               req.index < int(a.webHits.size())) {
+        WebHit& h = a.webHits[req.index]; // per-video format dropdown
+        const int eff = h.fmt >= 0 ? h.fmt : a.webFmt;
+        const int sel = showMenu(hwnd, a.uiScale, req.x, req.y,
+                                 {kWebFmtNames[0], kWebFmtNames[1],
+                                  kWebFmtNames[2], kWebFmtNames[3]},
+                                 eff);
+        if (sel >= 0 && sel < 4) h.fmt = sel;
     } else if (req.kind == MenuReq::CleanMissing) {
         cleanMissingFiles(a);
     } else if (req.kind == MenuReq::PlaylistRow && req.plId >= 0) {

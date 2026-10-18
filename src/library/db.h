@@ -32,6 +32,7 @@ public:
         ~Stmt();
         Stmt& bind(int idx, int64_t v);
         Stmt& bind(int idx, const std::string& v);
+        Stmt& bindBlob(int idx, const void* p, int n); // copied by SQLite
         Stmt& bindNull(int idx);
         bool step(); // true while a row is available
         // For statements that return no rows: true unless SQLite reported an
@@ -41,6 +42,7 @@ public:
         bool run();
         int64_t colInt(int i) const;
         std::string colText(int i) const;
+        std::string colBlob(int i) const; // raw bytes (NULs preserved)
         sqlite3_stmt* s = nullptr;
         Db* owner = nullptr; // set by prepare(): reports SQLITE_BUSY upward
     };

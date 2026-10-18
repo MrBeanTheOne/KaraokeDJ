@@ -311,6 +311,11 @@ void commitPrompt(App& a) {
         applyTagEdit(a, false);
         return;
     }
+    if (a.prompt == App::Prompt::IdlePresetSave) { // name the venue preset
+        if (!a.promptText.empty()) idlePresetSave(a, a.promptText);
+        a.prompt = App::Prompt::None;
+        return;
+    }
     if (a.prompt == App::Prompt::Confirm) {
         switch (a.confirmAction) {
         case App::ConfirmAction::RemoveFolder:
@@ -337,6 +342,9 @@ void commitPrompt(App& a) {
             a.singingItemId = -1;
             a.navDirty = true;
             a.status = L"rotation cleared — ready for a new night";
+            break;
+        case App::ConfirmAction::DeleteIdlePreset:
+            idlePresetDelete(a, a.confirmPath);
             break;
         case App::ConfirmAction::ClearQueue:
             a.queue.clear();
@@ -627,16 +635,24 @@ void engineTick(App& a) {
     // playing (both started by hand, automix off), the survivor takes the
     // active slot — video and end-of-track logic follow it, the crossfader
     // parks on it so the ended deck can be scrubbed/reloaded silently.
-    {
+    // The NON-active deck retires on drain too: left "playing", it would hold
+    // the dual-play hands-off guard below forever and automation would never
+    // resume after the night's one dual mix.
+    if (a.pendingFade < 0 && a.mixer.fadeTo.load() < 0) {
         const int act = a.mixer.activeDeck.load();
-        const int oth = 1 - act;
-        if (act >= 0 && a.pendingFade < 0 && a.mixer.fadeTo.load() < 0 &&
-            a.decks[act]->eos.load() && a.decks[act]->remainingSec() <= 0.0 &&
-            !a.label[oth].empty() && a.decks[oth]->playing.load() &&
-            !a.decks[oth]->eos.load()) {
-            a.decks[act]->playing.store(false);
-            a.mixer.crossfader.store(oth == 0 ? 0.f : 1.f);
-            a.mixer.activeDeck.store(oth);
+        for (int d = 0; d < 2; ++d) {
+            if (!a.decks[d]->playing.load() || !a.decks[d]->eos.load() ||
+                a.decks[d]->remainingSec() > 0.0 || a.label[d].empty())
+                continue;
+            const int oth = 1 - d;
+            if (d == act && !a.label[oth].empty() &&
+                a.decks[oth]->playing.load() && !a.decks[oth]->eos.load()) {
+                a.decks[d]->playing.store(false);
+                a.mixer.crossfader.store(oth == 0 ? 0.f : 1.f);
+                a.mixer.activeDeck.store(oth);
+            } else if (d != act) {
+                a.decks[d]->playing.store(false); // drained passenger deck
+            }
         }
     }
     // Queue / cued-deck advance.

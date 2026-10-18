@@ -184,6 +184,10 @@ void drawSidebar(App& a, Ui& ui, const D2D1_RECT_F& r) {
                 a.showHidden =
                     row.mode == NavMode::Library && row.folder == L"##hidden";
                 a.focus = Focus::None;
+                a.search.clear(); // a new section starts with a fresh search
+                a.searchCaret = 0;
+                a.results.clear(); // don't flash the OLD view's filtered list
+                a.resultsPlItem.clear(); // while the async reload runs
                 a.searchDirty = true;
                 a.libScroll = 0; // new view: back to top
                 a.selLib = -1;
@@ -211,53 +215,118 @@ static void drawWebView(App& a, Ui& ui, const D2D1_RECT_F& r) {
         ui.rect(box, cInset, 7);
         ui.frameRect(box, a.focus == Focus::Search ? cAccent : cBorder, 5);
         ui.text(rc(box.left + 8, box.top, box.right - box.left - 12, 26),
-                a.search + (a.focus == Focus::Search && caretOn() ? L"▏" : L""),
-                13, cText, 0, false);
-        if (ui.in.pressed && hit(box, ui.in.pressX, ui.in.pressY))
-            a.focus = Focus::Search;
+                a.search, 13, cText, 0, false);
+        a.searchCaret = std::clamp(a.searchCaret, 0, int(a.search.size()));
+        if (a.focus == Focus::Search && caretOn()) {
+            const float cx2 = (std::min)(
+                box.right - 6.f,
+                box.left + 8 + ui.caretX(a.search, 13, size_t(a.searchCaret)));
+            ui.line(cx2, box.top + 5, cx2, box.bottom - 5, cText, 1.f);
+        }
+        if (ui.in.pressed && hit(box, ui.in.pressX, ui.in.pressY)) {
+            a.focus = Focus::Search; // caret lands where the click was
+            a.searchCaret =
+                ui.caretFromX(a.search, 13, ui.in.pressX - box.left - 8);
+        }
         if (ui.button(308, rc(r.right - 112, r.top + 8, 100, 26),
                       a.webSearchBusy.load() ? L"SEARCHING…" : L"SEARCH",
                       cAccent, true) &&
             !a.webSearchBusy.load())
             webSearch(a, a.search);
-        // Format row: the quality every GET from here on will use.
-        ui.text(rc(r.left + 14, r.top + 40, 86, 24), L"FORMAT", 10, cDim, 0, true);
-        for (int f = 0; f < 4; ++f) {
-            if (ui.toggle(320 + f, rc(r.left + 100 + f * 96, r.top + 40, 88, 24),
-                          kWebFmtNames[f], a.webFmt == f, cGreen))
-                a.webFmt = f;
+        // Selection strip: ALL checkbox + one GET for the whole selection.
+        size_t nSel = 0, nSelable = 0;
+        for (const WebHit& h : a.webHits) {
+            if (!h.inLib) ++nSelable;
+            if (h.sel) ++nSel;
         }
-        ui.text(rc(r.left + 100 + 4 * 96 + 10, r.top + 40,
-                   (std::max)(0.f, r.right - (r.left + 100 + 4 * 96 + 24)), 24),
-                L"Enter = search · GET sends to WEB ▸ Downloads", 10, cDim, 0,
-                false);
+        const bool allSel = nSelable > 0 && nSel >= nSelable;
+        if (ui.toggle(330, rc(r.left + 14, r.top + 40, 54, 24), L"ALL", allSel,
+                      cGreen))
+            for (WebHit& h : a.webHits) h.sel = !allSel && !h.inLib;
+        if (nSel > 0) {
+            wchar_t gl[48];
+            swprintf(gl, 48, L"GET SELECTED (%zu)", nSel);
+            if (ui.button(331, rc(r.left + 76, r.top + 40, 170, 24), gl, cGreen,
+                          true)) {
+                for (WebHit& h : a.webHits)
+                    if (h.sel) {
+                        webEnqueue(a, h.id, h.title, h.fmt);
+                        h.sel = false;
+                    }
+                a.status = L"downloads queued — WEB ▸ Downloads";
+            }
+        } else {
+            ui.text(rc(r.left + 76, r.top + 40, r.right - r.left - 90, 24),
+                    L"tick videos and GET them in one go · each row has its "
+                    L"own format menu · Enter = search",
+                    10, cDim, 0, false);
+        }
 
-        const D2D1_RECT_F list = rc(r.left + 6, r.top + 72, r.right - r.left - 12,
-                                    r.bottom - r.top - 78);
+        const D2D1_RECT_F list = rc(r.left + 6, r.top + 70, r.right - r.left - 12,
+                                    r.bottom - r.top - 76);
         ui.clipPush(list);
+        const float wrH = 54; // tall rows: thumbnail + two text lines
         const size_t count = a.webHits.size();
         if (hit(list, ui.in.mx, ui.in.my) && ui.in.wheel != 0)
             a.libScroll =
-                std::clamp(a.libScroll - ui.in.wheel * 3, 0.f,
+                std::clamp(a.libScroll - ui.in.wheel * 1.5f, 0.f,
                            (std::max)(0.f, float(count) -
-                                               (list.bottom - list.top) / rowH));
+                                               (list.bottom - list.top) / wrH));
         for (size_t i = 0; i < count; ++i) {
-            const float y = list.top + (float(i) - a.libScroll) * rowH;
-            if (y + rowH < list.top || y > list.bottom) continue;
+            const float y = list.top + (float(i) - a.libScroll) * wrH;
+            if (y + wrH < list.top || y > list.bottom) continue;
+            WebHit& h = a.webHits[i];
             const D2D1_RECT_F row =
-                rc(list.left, y, list.right - list.left, rowH - 2);
+                rc(list.left, y, list.right - list.left, wrH - 4);
             if (i & 1) ui.rect(row, col(0x1A1B1F), 4);
-            const WebHit& h = a.webHits[i];
-            ui.text(rc(row.left + 8, y, 52, rowH),
-                    h.durSec > 0 ? fmtTime(double(h.durSec)) : L"", 12, cDim, 0,
+            // checkbox (skipped for videos already in the library)
+            if (!h.inLib) {
+                const D2D1_RECT_F cb = rc(row.left + 8, y + 16, 18, 18);
+                ui.frameRect(cb, h.sel ? cGreen : cBorder, 4);
+                if (h.sel) ui.text(cb, L"✓", 12, cGreen, 1, true);
+                if (ui.in.pressed && hit(cb, ui.in.pressX, ui.in.pressY))
+                    h.sel = !h.sel;
+            }
+            // thumbnail (uploaded lazily; grey placeholder until fetched)
+            const D2D1_RECT_F th = rc(row.left + 34, y + 3, 80, 45);
+            const int slot = 10000 + int(i);
+            bool drawn = a.webThumbSlotDone.count(slot) && ui.image(slot, th);
+            if (!drawn) {
+                std::lock_guard<std::mutex> lk(a.webMx);
+                const auto it = a.webThumbs.find(h.id);
+                if (it != a.webThumbs.end() && it->second.width) {
+                    ui.setImage(slot, it->second.bgra.data(), it->second.width,
+                                it->second.height);
+                    a.webThumbSlotDone.insert(slot);
+                    drawn = ui.image(slot, th);
+                }
+            }
+            if (!drawn) ui.rect(th, col(0x2A2A30), 4);
+            // two text lines: title, then channel · duration
+            const float tx = row.left + 124;
+            ui.text(rc(tx, y + 4, row.right - tx - 240, 24), h.title, 13,
+                    cText, 0, false);
+            std::wstring sub = h.channel;
+            if (h.durSec > 0)
+                sub += (sub.empty() ? L"" : L"   ·   ") +
+                       fmtTime(double(h.durSec));
+            ui.text(rc(tx, y + 28, row.right - tx - 240, 20), sub, 11, cDim, 0,
                     false);
-            ui.text(rc(row.left + 66, y, row.right - row.left - 196, rowH),
-                    h.title + (h.channel.empty() ? L"" : L"   —   " + h.channel),
-                    12, cText, 0, false);
-            if (ui.button(800 + int(i), rc(row.right - 120, y + 1, 108, 22),
-                          std::wstring(L"GET ") + kWebFmtNames[a.webFmt],
-                          cAccent))
-                webEnqueue(a, h.id, h.title);
+            // right side: IN LIBRARY badge, or format override + GET
+            if (h.inLib) {
+                ui.text(rc(row.right - 228, y, 216, wrH - 4), L"IN LIBRARY ✓",
+                        11, cGreen, 2, true);
+                continue;
+            }
+            const int eff = h.fmt >= 0 ? h.fmt : a.webFmt;
+            // per-video format dropdown (a real menu, like a <select>)
+            const D2D1_RECT_F fb = rc(row.right - 236, y + 13, 100, 26);
+            if (ui.button(800 + int(i),fb,
+                          std::wstring(kWebFmtNames[eff]) + L"  ▾", cDim))
+                a.menu = {MenuReq::WebFmt, int(i), fb.left, fb.bottom};
+            if (ui.button(830 + int(i), rc(row.right - 128, y + 13, 116, 26),
+                          L"GET", cAccent, true))
+                webEnqueue(a, h.id, h.title, h.fmt);
         }
         if (!count)
             ui.text(rc(list.left + 8, list.top + 10,
@@ -267,7 +336,7 @@ static void drawWebView(App& a, Ui& ui, const D2D1_RECT_F& r) {
                         : L"search YouTube above — results appear here",
                     12, cDim, 0, false);
         ui.clipPop();
-        scrollbar(a, ui, 702, list, count, rowH, a.libScroll);
+        scrollbar(a, ui, 702, list, count, wrH, a.libScroll);
         return;
     }
 
@@ -397,10 +466,19 @@ void drawBrowser(App& a, Ui& ui, const D2D1_RECT_F& r) {
         ui.rect(box, cInset, 7);
         ui.frameRect(box, a.focus == Focus::Search ? cAccent : cBorder, 5);
         ui.text(rc(box.left + 8, box.top, box.right - box.left - 12, 26),
-                a.search +
-                    (a.focus == Focus::Search && caretOn() ? L"▏" : L""),
-                13, cText, 0, false);
-        if (ui.in.pressed && hit(box, ui.in.pressX, ui.in.pressY)) a.focus = Focus::Search;
+                a.search, 13, cText, 0, false);
+        a.searchCaret = std::clamp(a.searchCaret, 0, int(a.search.size()));
+        if (a.focus == Focus::Search && caretOn()) {
+            const float cx2 = (std::min)(
+                box.right - 6.f,
+                box.left + 8 + ui.caretX(a.search, 13, size_t(a.searchCaret)));
+            ui.line(cx2, box.top + 5, cx2, box.bottom - 5, cText, 1.f);
+        }
+        if (ui.in.pressed && hit(box, ui.in.pressX, ui.in.pressY)) {
+            a.focus = Focus::Search; // caret lands where the click was
+            a.searchCaret =
+                ui.caretFromX(a.search, 13, ui.in.pressX - box.left - 8);
+        }
         if (ui.button(300, rc(r.right - 182, r.top + 8, 84, 26), L"+ QUEUE", cGreen))
             queueSelected(a);
         if (ui.button(301, rc(r.right - 92, r.top + 8, 80, 26), L"MIX ▸", cAccent, true)) {

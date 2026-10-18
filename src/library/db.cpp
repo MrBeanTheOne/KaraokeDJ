@@ -200,6 +200,11 @@ Db::Stmt& Db::Stmt::bindNull(int idx) {
     return *this;
 }
 
+Db::Stmt& Db::Stmt::bindBlob(int idx, const void* p, int n) {
+    sqlite3_bind_blob(s, idx, p, n, SQLITE_TRANSIENT);
+    return *this;
+}
+
 // Only a WRITE that hits the busy timeout is a lost change worth warning
 // about — a timed-out SELECT loses nothing, so it must not set the flag.
 static void flagBusy(Db* owner, sqlite3_stmt* s, int rc) {
@@ -225,4 +230,10 @@ int64_t Db::Stmt::colInt(int i) const { return sqlite3_column_int64(s, i); }
 std::string Db::Stmt::colText(int i) const {
     const unsigned char* t = sqlite3_column_text(s, i);
     return t ? reinterpret_cast<const char*>(t) : "";
+}
+
+std::string Db::Stmt::colBlob(int i) const {
+    const void* p = sqlite3_column_blob(s, i);
+    const int n = sqlite3_column_bytes(s, i);
+    return p && n > 0 ? std::string(static_cast<const char*>(p), size_t(n)) : "";
 }

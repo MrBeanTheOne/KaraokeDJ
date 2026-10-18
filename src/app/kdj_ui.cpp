@@ -103,8 +103,8 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         if (ui.in.pressed && hit(qdiv, ui.in.pressX, ui.in.pressY))
             a.resizingQueue = true;
         if (!ui.in.down) a.resizingQueue = false;
-        if (a.resizingQueue) // min fits the header buttons (AUTOQUEUE..»)
-            a.queueW = std::clamp(W - 16.f - ui.in.mx, 340.f,
+        if (a.resizingQueue) // min fits "QUEUE (NNN)" plus AUTOQUEUE..» intact
+            a.queueW = std::clamp(W - 16.f - ui.in.mx, 430.f,
                                   (std::min)(560.f, W * 0.4f));
     }
     const float qw = a.queueOpen ? a.queueW : 30.f;
@@ -281,6 +281,8 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                 : columns ? L"BROWSER COLUMNS"
                 : confirm ? a.confirmTitle
                 : singer  ? L"ADD TO ROTATION — NEW SINGER"
+                : a.prompt == App::Prompt::IdlePresetSave
+                          ? L"SAVE WAITING SCREEN AS PRESET"
                           : L"NEW PLAYLIST",
                 11, confirm ? cRed : cAccent, 0, true);
         if (tags) {
@@ -396,7 +398,9 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                                   ? a.rotAddPending[0].label
                                   : std::to_wstring(a.rotAddPending.size()) +
                                         L" tracks")
-                           : L"fill it by right-click → Add to playlist, or drag rows in",
+                    : a.prompt == App::Prompt::IdlePresetSave
+                        ? L"name it after the venue — load it back in one click"
+                        : L"fill it by right-click → Add to playlist, or drag rows in",
                     12, cDim, 0, false);
             const D2D1_RECT_F box = rc(p.left + 16, p.top + 50, pw - 32, 28);
             ui.rect(box, cInset, 7);
@@ -405,7 +409,10 @@ void drawUi(App& a, Ui& ui, float W, float H) {
                     a.promptText + (caretOn() ? L"▏" : L""), 13, cText, 0,
                     false);
             if (ui.button(500, rc(p.right - 176, p.bottom - 40, 72, 28),
-                          singer ? L"ADD" : L"CREATE", cGreen, true))
+                          singer ? L"ADD"
+                          : a.prompt == App::Prompt::IdlePresetSave ? L"SAVE"
+                                                                    : L"CREATE",
+                          cGreen, true))
                 commitPrompt(a);
         }
         if ((!columns && !reqs &&

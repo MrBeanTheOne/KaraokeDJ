@@ -433,6 +433,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
     startBpmAnalysis(a); // fill in BPMs the last session didn't get to
 
     auto lastDraw = Clock::now();
+    App::Prompt lastPrompt = App::Prompt::None;
     while (!g_closed) {
         MSG msg;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -476,7 +477,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                 : tgt == Focus::SingerName    ? a.singerFilter
                 : tgt == Focus::IdleTitle     ? a.idleTitle
                                               : a.search;
-            if (c == 8) { if (!target.empty()) target.pop_back(); }
+            if (&target == &a.search) { // caret-aware (click places the caret)
+                int& cp = a.searchCaret;
+                cp = std::clamp(cp, 0, int(target.size()));
+                if (c == 8) { if (cp > 0) target.erase(size_t(--cp), 1); }
+                else { target.insert(target.begin() + cp, c); ++cp; }
+            } else if (c == 8) { if (!target.empty()) target.pop_back(); }
             else target += c;
             if (a.prompt == App::Prompt::None) {
                 a.focus = tgt; // the box lights up once you type
@@ -504,6 +510,11 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                        a.nav != NavMode::History) {
                 queueSelected(a);
             }
+        }
+        if (a.prompt == App::Prompt::None && a.focus == Focus::Search &&
+            g_pending.caretKey) { // arrows walk the search caret
+            a.searchCaret = std::clamp(a.searchCaret + g_pending.caretKey, 0,
+                                       int(a.search.size()));
         }
         if (a.prompt == App::Prompt::TagEdit) { // caret moves + field hopping
             std::wstring& t = a.tagField[std::clamp(a.tagFocus, 0, 3)];
@@ -585,6 +596,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             if (a.pickThread.joinable()) a.pickThread.join();
             if (!a.pickResult.empty()) {
                 if (a.pickKind == 1) { // waiting-screen logo
+                    // Copy into the app's own folder: the original can live on
+                    // a USB stick that won't be plugged in at the venue.
+                    const std::wstring own =
+                        idleAssetDir() + L"\\" + leafName(a.pickResult);
+                    if (CopyFileW(a.pickResult.c_str(), own.c_str(), FALSE))
+                        a.pickResult = own;
                     a.idleLogoPath = a.pickResult;
                     a.idleLogoLoaded = loadImageFile(a.idleLogoPath, a.idleLogo);
                     if (!a.idleLogoLoaded) {
@@ -633,6 +650,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                         a.status = m;
                     }
                 } else if (a.pickKind == 2) { // waiting-screen background
+                    const std::wstring own = // own copy, same as the logo
+                        idleAssetDir() + L"\\" + leafName(a.pickResult);
+                    if (CopyFileW(a.pickResult.c_str(), own.c_str(), FALSE))
+                        a.pickResult = own;
                     a.idleBgPath = a.pickResult;
                     a.idleBgLoaded = loadImageFile(a.idleBgPath, a.idleBg, 1920);
                     if (!a.idleBgLoaded) {
@@ -881,6 +902,17 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             reloadBrowser(a);
         pollSearch(a); // async library/folder results land here
         webPoll(a);    // YouTube results + finished downloads land here
+        if (a.prompt != lastPrompt) {
+            // In-app dialogs draw INSIDE the main window. One raised from the
+            // settings window (e.g. the clean-missing confirmation) was
+            // invisible behind it — and in showtime mode there's no taskbar
+            // to notice from. Bring the main window forward when one opens.
+            if (a.prompt != App::Prompt::None) {
+                if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+                SetForegroundWindow(hwnd);
+            }
+            lastPrompt = a.prompt;
+        }
 
         engineTick(a);
 

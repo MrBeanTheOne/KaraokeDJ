@@ -80,11 +80,16 @@ enum class NavMode { Library, Playlist, Folder, Singers, Settings, History, Web 
 struct WebHit {
     std::wstring id, title, channel;
     int durSec = 0;
+    bool inLib = false; // a library path already carries this video's [id]
+    bool sel = false;   // checkbox state (GET SELECTED)
+    int fmt = -1;       // per-row format override; -1 = the global choice
 };
 struct WebDl {
+    int key = 0;         // stable identity: CLEAR DONE erases rows while the
+                         // worker runs, so an index would drift mid-download
     std::wstring target; // video id, or a full pasted URL
     std::wstring title;
-    int fmt = 0;         // index into the format table (kdj_jobs.cpp)
+    int fmt = 0;         // index into the format table
     int state = 0;       // 0 waiting, 1 downloading, 2 done, 3 failed
     int pct = 0;         // progress while downloading
     std::wstring path, error;
@@ -102,7 +107,8 @@ struct SingerRow {
 struct MenuReq {
     enum Kind {
         None, VideoOut, Automix, BrowserRow, QueueRow, SingerRow,
-        PlaylistRow, FolderRow, CleanMissing, DeckWave, RotationRow, HistoryRow
+        PlaylistRow, FolderRow, CleanMissing, DeckWave, RotationRow, HistoryRow,
+        WebFmt // per-result format dropdown (index = row in webHits)
     } kind = None;
     int index = -1;
     float x = 0, y = 0;
@@ -162,6 +168,8 @@ struct App {
     Focus focus = Focus::None; // None = no box lit; typing goes to the
                                // view's natural box and focuses it
     bool searchDirty = true, navDirty = true;
+    int searchCaret = 0; // caret index in the search box (click to place);
+                         // clamped at use so clears don't need to reset it
 
     // Async library search: the browser query over a big library takes long
     // enough on a slow machine to stall the UI thread — which also presents
@@ -223,7 +231,7 @@ struct App {
     bool sidebarOpen = true, queueOpen = true;
     float sideW = 220.f; // resizable via the divider next to the sidebar
     bool resizingSide = false;
-    float queueW = 340.f; // resizable via the divider left of the queue
+    float queueW = 430.f; // resizable via the divider left of the queue
     // Queue columns: TITLE | ARTIST | TIME, dragged by the dividers between
     // them exactly like the browser's. Shares, so they follow the drawer width.
     static constexpr int kQueueCols = 3;
@@ -291,6 +299,9 @@ struct App {
     bool idleBgLoaded = false;
     std::vector<std::wstring> idleSingerLines; // next singers (reloadNav)
     bool idleEditorOpen = false; // WAITING SCREEN section expanded
+    // Waiting-screen presets (one per venue): names of the saved designs
+    // (settings keys "idlepre_<name>"). Refreshed on load/save/delete.
+    std::vector<std::wstring> idlePresets;
     int pickKind = 0; // pickThread routing: 0 import folder, 1 logo, 2 bg,
                       // 3/4 profile save/open, 5 yt dir, 6 relocate,
                       // 7 playlist .m3u8 save
@@ -357,11 +368,12 @@ struct App {
     // In-app modal: text input (new singer / new playlist) or a themed
     // CONFIRM box (all destructive actions — no native MessageBox).
     enum class Prompt {
-        None, NewSinger, NewPlaylist, Confirm, Columns, Requests, TagEdit
+        None, NewSinger, NewPlaylist, Confirm, Columns, Requests, TagEdit,
+        IdlePresetSave // name a waiting-screen preset (venue setups)
     };
     enum class ConfirmAction {
         None, RemoveFolder, DeletePlaylist, CleanMissing, ClearRotation,
-        ClearHistory, ClearQueue, QuitApp
+        ClearHistory, ClearQueue, QuitApp, DeleteIdlePreset
     };
     Prompt prompt = Prompt::None;
     std::vector<Match> rotAddPending; // NewSinger: the track(s) being added
@@ -437,11 +449,22 @@ struct App {
     std::vector<WebHit> webFound;
     std::wstring webErr;
     std::deque<WebDl> webDls;
+    int webDlKey = 0; // UI thread: last assigned WebDl key
     std::thread webSearchThread, webDlThread;
     std::condition_variable webDlCv;
     std::atomic<bool> webSearchBusy{false}, webSearchDone{false};
     std::atomic<bool> webQuit{false};
     std::atomic<bool> webRescan{false}; // a download landed: refresh library
+    // Thumbnails (i.ytimg.com mqdefault.jpg per video id), fetched by one
+    // worker and decoded to BGRA; the UI uploads them into image slots
+    // 10000+row, re-uploading after device loss (image() returns false).
+    // webThumbs/webThumbReq guarded by webMx; the cache is pruned to the
+    // current result set on every adoption.
+    std::map<std::wstring, VideoFrame> webThumbs; // id -> decoded image
+    std::deque<std::wstring> webThumbReq;         // ids waiting for fetch
+    std::thread webThumbThread;
+    std::condition_variable webThumbCv;
+    std::set<int> webThumbSlotDone; // UI thread: rows already uploaded
     std::wstring ytDir; // download folder (yt_dir); empty = %APPDATA% cache
 
     MenuReq menu;
@@ -589,12 +612,22 @@ bool exportPlaylistM3U(App& a, int64_t plId, const std::wstring& file);
 bool importPlaylistM3U(App& a, const std::wstring& file, int* matched = nullptr,
                        int* total = nullptr);
 std::wstring runCapture(const std::wstring& cmd, DWORD& exitCode);
+std::string httpsGet(const wchar_t* host, const wchar_t* path); // kdj_jobs.cpp
 std::wstring youtubeCacheDir(const std::wstring& custom = L"");
+// Waiting-screen venue presets + the app-owned image folder
+// (%APPDATA%\KaraokeDJ\idle): picked logos/backgrounds are copied there so a
+// USB stick can be unplugged, and profile import drops carried images there.
+std::wstring idleAssetDir();
+void idlePresetRefresh(App& a);            // rebuild App::idlePresets
+void idlePresetSave(App& a, const std::wstring& name);
+bool idlePresetApply(App& a, const std::wstring& name);
+void idlePresetDelete(App& a, const std::wstring& name);
 // WEB view: search YouTube (worker thread; results adopt via webPoll),
 // enqueue a download by hit index or pasted URL, poll results/finished
 // downloads on the UI thread, wind the workers down at exit.
 void webSearch(App& a, const std::wstring& term);
-void webEnqueue(App& a, const std::wstring& target, const std::wstring& title);
+void webEnqueue(App& a, const std::wstring& target, const std::wstring& title,
+                int fmt = -1); // -1 = the view's global format choice
 void webPoll(App& a);
 void stopWebWorkers(App& a);
 extern const wchar_t* kWebFmtNames[4]; // MP4 720p / MP4 best / MP3 / WAV

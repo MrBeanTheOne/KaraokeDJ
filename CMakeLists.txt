@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(karaoke-dj VERSION 1.1.41 LANGUAGES C CXX)
+project(karaoke-dj VERSION 1.1.42 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -64,6 +64,7 @@ add_executable(karaoke_dj WIN32
   src/app/karaoke_dj_main.cpp
   src/app/kdj_data.cpp
   src/app/kdj_jobs.cpp
+  src/app/kdj_web.cpp
   src/app/kdj_engine.cpp
   src/app/kdj_ui.cpp
   src/app/kdj_ui_decks.cpp
