@@ -518,6 +518,17 @@ void engineTick(App& a) {
         const DeckState s = a.decks[a.pendingFade]->state();
         if (s == DeckState::Ready) {
             const int pf = a.pendingFade;
+            // Late start marker: the waveform scan (smart cue) can land in
+            // the window between load and this fade, where applyCueIn refuses
+            // to touch a pending deck. The deck is still silent here — snap
+            // it onto its marker now or the track plays its silent lead-in.
+            if (!a.decks[pf]->playing.load() && a.cueIn[pf] > 0) {
+                const uint64_t tgt = uint64_t(double(a.cueIn[pf]) / 1000.0 * kRate);
+                if (a.decks[pf]->framesPlayed.load() + kRate / 4 < tgt) {
+                    a.decks[pf]->seek(double(a.cueIn[pf]) / 1000.0);
+                    if (a.hasVid[pf]) a.vdec[pf].seek(int64_t(a.cueIn[pf]) * 10000);
+                }
+            }
             a.retireAfterFade = a.mixer.activeDeck.load(); // outgoing deck, if any
             MixCommand c{pf, uint64_t(a.pendingDur * kRate), FadeCurve::EqualPower};
             c.park = a.automixOn; // manual mix: the fader stays the operator's
@@ -571,6 +582,11 @@ void engineTick(App& a) {
             // silent in the master, so a track can be cued and scrubbed there.
             // Manual mix: the fader is the operator's — hands off.
             if (a.automixOn) a.mixer.crossfader.store(act == 0 ? 0.f : 1.f);
+            // A smart cue derived DURING the fade was refused by applyCueIn
+            // (it never yanks a fading deck) and the derive block does not
+            // retry — so re-apply once here. No-op when already past the
+            // marker; skips the rest of a silent lead-in otherwise.
+            applyCueIn(a, act);
         }
     }
     // Preload: keep the idle deck holding the next queued track from the
