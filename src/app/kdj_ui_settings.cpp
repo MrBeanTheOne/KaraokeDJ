@@ -85,6 +85,13 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
     }
     ui.text(rc(x + 310, y, w - 310, 28),
             L"trims every track toward the same loudness", 10, cDim, 0, false);
+    y += 36;
+    if (ui.toggle(614, rc(x, y, 300, 28), L"TRANSPORT KEYS (SPACE/PGUP/PGDN)",
+                  a.hotkeysOn, cGreen))
+        a.hotkeysOn = !a.hotkeysOn;
+    ui.text(rc(x + 310, y, w - 310, 28),
+            L"off: space only types in search — never pauses the music", 10,
+            cDim, 0, false);
     y += 40;
     if (!a.updLatest.empty()) { // newer release on GitHub
         const bool dl = a.updDlBusy.load();

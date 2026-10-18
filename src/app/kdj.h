@@ -215,6 +215,11 @@ struct App {
     std::vector<HistRow> history;
     std::set<int64_t> playedTonight; // green dot in the browser
 
+    // Transport hotkeys (setting "hotkeys"): space pause, PgDn skip, PgUp
+    // restart. Off = space is just a character for the search box — a mid-gig
+    // "dancing queen" must never pause the music on its own space bar.
+    bool hotkeysOn = true;
+
     // Auto gain: per-deck trim from measured loudness (setting auto_gain).
     // The trim is ramped toward gainTarget while a deck is audible — the scan
     // lands moments after a manual start, and snapping there was heard as a

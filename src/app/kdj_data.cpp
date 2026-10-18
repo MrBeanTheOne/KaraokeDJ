@@ -91,6 +91,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.idleTitle = wide(getSetting(a.db, "idle_title", "\xE2\x99\xAA  KARAOKE NIGHT"));
     a.scanTags = getSetting(a.db, "scan_tags", "1") == "1";
     a.autoGainOn = getSetting(a.db, "auto_gain", "1") == "1";
+    a.hotkeysOn = getSetting(a.db, "hotkeys", "1") == "1";
     a.lang = getSetting(a.db, "lang", "0") == "1" ? 1 : 0;
     uiSetLanguage(a.lang);
     a.watchOn = getSetting(a.db, "watch_folders", "0") == "1";
@@ -176,6 +177,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "idle_title", utf8(a.idleTitle));
     setSetting(a.db, "scan_tags", a.scanTags ? "1" : "0");
     setSetting(a.db, "auto_gain", a.autoGainOn ? "1" : "0");
+    setSetting(a.db, "hotkeys", a.hotkeysOn ? "1" : "0");
     setSetting(a.db, "lang", a.lang ? "1" : "0");
     setSetting(a.db, "watch_folders", a.watchOn ? "1" : "0");
     setSetting(a.db, "web_on", a.webOn ? "1" : "0");

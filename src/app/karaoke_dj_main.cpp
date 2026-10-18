@@ -206,9 +206,12 @@ static LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 CloseClipboard();
             }
         } else if (wp == L'\r') g_pending.enter = true;
-        else if (wp == L' ' && g_app && g_app->prompt == App::Prompt::None &&
+        else if (wp == L' ' && g_app && g_app->hotkeysOn &&
+                 g_app->prompt == App::Prompt::None &&
                  g_app->focus == Focus::None)
             g_pending.pauseKey = true; // space only types inside a box
+                                       // (hotkeys off: it falls through and
+                                       // types into the search like any key)
         else if (wp >= 32 || wp == 8) g_pending.typed.push_back(wchar_t(wp));
         return 0;
     case WM_KEYDOWN:
@@ -498,7 +501,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
             a.selQRows.clear();
             a.selQueue = (std::min)(a.selQueue, int(a.queue.size()) - 1);
         }
-        if (a.prompt == App::Prompt::None && g_pending.pgdn) { // skip: cued deck, else queue
+        if (a.prompt == App::Prompt::None && g_pending.pgdn &&
+            a.hotkeysOn) { // skip: cued deck, else queue
             const int act = a.mixer.activeDeck.load();
             const int idle = act < 0 ? 0 : 1 - act;
             if (!a.label[idle].empty() && a.decks[idle]->state() == DeckState::Ready &&
@@ -511,7 +515,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, PWSTR, int) {
                 playNow(a, m);
             }
         }
-        if (a.prompt == App::Prompt::None && g_pending.pgup) {
+        if (a.prompt == App::Prompt::None && g_pending.pgup && a.hotkeysOn) {
             const int act = a.mixer.activeDeck.load();
             if (act >= 0) seekFrac(a, act, 0.f);
         }
