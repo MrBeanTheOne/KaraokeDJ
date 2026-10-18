@@ -34,8 +34,9 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.queueOpen = getSetting(a.db, "queue_open", "1") == "1";
     a.sideW = std::clamp(float(atof(getSetting(a.db, "side_w", "220").c_str())), 160.f,
                          420.f);
-    a.queueW = std::clamp(float(atof(getSetting(a.db, "queue_w", "330").c_str())),
-                          300.f, 560.f);
+    // min fits the queue header buttons (AUTOQUEUE..»); heals saved widths
+    a.queueW = std::clamp(float(atof(getSetting(a.db, "queue_w", "340").c_str())),
+                          340.f, 560.f);
     { // queue columns: plain width shares, "0.50,0.32,0.18"
         const std::string qs = getSetting(a.db, "queue_cols", "");
         float f[App::kQueueCols]{};
@@ -131,6 +132,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
         }
     }
     a.videoFit = std::clamp(atoi(getSetting(a.db, "video_fit", "0").c_str()), 0, 2);
+    a.videoOverlayOn = getSetting(a.db, "video_overlay", "0") == "1";
     a.audioDevice = getSetting(a.db, "audio_device", "");
     a.winMax = getSetting(a.db, "win_max", "1") == "1"; // maximized by default
     a.appFull = getSetting(a.db, "win_full", "0") == "1"; // showtime mode
@@ -194,6 +196,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
         setSetting(a.db, "idle_elems", es);
     }
     setSetting(a.db, "video_fit", std::to_string(a.videoFit));
+    setSetting(a.db, "video_overlay", a.videoOverlayOn ? "1" : "0");
     setSetting(a.db, "audio_device", a.audioDevice);
     setSetting(a.db, "win_max", a.winMax ? "1" : "0");
     setSetting(a.db, "win_full", a.appFull ? "1" : "0");

@@ -422,6 +422,7 @@ void presentVideo(App& a) {
     for (int k = 0; k < 6; ++k) sc.elems[k] = a.idleElems[k];
     for (auto* w : wins) {
         if (!w) continue;
+        w->setVideoOverlay(a.videoOverlayOn);
         w->setIdleScene(sc);
         if (a.idleLogoLoaded && !w->hasLogo()) w->setLogo(a.idleLogo);
         if (!a.idleLogoLoaded && w->hasLogo()) w->clearLogo();

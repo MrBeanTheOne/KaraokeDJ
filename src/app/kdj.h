@@ -184,7 +184,7 @@ struct App {
     bool sidebarOpen = true, queueOpen = true;
     float sideW = 220.f; // resizable via the divider next to the sidebar
     bool resizingSide = false;
-    float queueW = 330.f; // resizable via the divider left of the queue
+    float queueW = 340.f; // resizable via the divider left of the queue
     // Queue columns: TITLE | ARTIST | TIME, dragged by the dividers between
     // them exactly like the browser's. Shares, so they follow the drawer width.
     static constexpr int kQueueCols = 3;
@@ -232,6 +232,9 @@ struct App {
     // Settings view state
     int lang = 0; // 0 English, 1 French (setting "lang"; applied via uiSetLanguage)
     int videoFit = 0;         // 0 fit (letterbox), 1 fill (crop), 2 stretch
+    // NEXT UP + QR drawn over playing video (top-bar OVERLAY toggle, setting
+    // video_overlay). Audio-only tracks always show the full waiting screen.
+    bool videoOverlayOn = false;
     std::wstring idleTitle;   // waiting-screen headline (idle_title)
     // Waiting-screen designer: element layout, custom line, logo.
     IdleElem idleElems[6];        // defaults in loadSettings (idle_elems)

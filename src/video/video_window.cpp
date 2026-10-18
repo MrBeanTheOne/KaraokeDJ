@@ -368,41 +368,104 @@ void VideoWindow::drawIdle() {
         const float qy = r == 0   ? mg
                          : r == 2 ? s.height - mg - qw - capH
                                   : (s.height - qw - capH) / 2;
-        brush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
-        rt_->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(qx, qy, qx + qw, qy + qw), cell * 2,
-                              cell * 2),
-            brush);
-        brush->SetColor(D2D1::ColorF(D2D1::ColorF::Black));
-        const float ox = qx + cell * 4, oy = qy + cell * 4;
-        for (int my = 0; my < qrSize_; ++my)
-            for (int mx = 0; mx < qrSize_; ++mx)
-                if (qrMods_[size_t(my) * qrSize_ + mx])
-                    rt_->FillRectangle(
-                        D2D1::RectF(ox + mx * cell, oy + my * cell,
-                                    ox + (mx + 1) * cell + 0.5f,
-                                    oy + (my + 1) * cell + 0.5f),
-                        brush);
-        IDWriteTextFormat* qf = nullptr;
+        drawQrCard(qx, qy, qw, szQ, brush);
+    }
+    brush->Release();
+}
+
+// White card + modules + caption/url lines; qw includes the quiet zone.
+// Shared by the waiting screen and the over-video overlay.
+void VideoWindow::drawQrCard(float qx, float qy, float qw, float szQ,
+                             ID2D1SolidColorBrush* brush) {
+    const float cell = qw / float(qrSize_ + 8);
+    brush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+    rt_->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(qx, qy, qx + qw, qy + qw), cell * 2,
+                          cell * 2),
+        brush);
+    brush->SetColor(D2D1::ColorF(D2D1::ColorF::Black));
+    const float ox = qx + cell * 4, oy = qy + cell * 4;
+    for (int my = 0; my < qrSize_; ++my)
+        for (int mx = 0; mx < qrSize_; ++mx)
+            if (qrMods_[size_t(my) * qrSize_ + mx])
+                rt_->FillRectangle(
+                    D2D1::RectF(ox + mx * cell, oy + my * cell,
+                                ox + (mx + 1) * cell + 0.5f,
+                                oy + (my + 1) * cell + 0.5f),
+                    brush);
+    IDWriteTextFormat* qf = nullptr;
+    if (SUCCEEDED(dw_->CreateTextFormat(
+            L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, szQ, L"",
+            &qf))) {
+        qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        qf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        brush->SetColor(D2D1::ColorF(0xE8ECF1));
+        const std::wstring& cap = scene_.qrCaption;
+        rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
+                       D2D1::RectF(qx - 80, qy + qw + 6, qx + qw + 80,
+                                   qy + qw + 6 + szQ * 1.5f),
+                       brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        brush->SetColor(D2D1::ColorF(0x9BA3AD));
+        rt_->DrawTextW(qrUrl_.c_str(), UINT32(qrUrl_.size()), qf,
+                       D2D1::RectF(qx - 80, qy + qw + 6 + szQ * 1.6f,
+                                   qx + qw + 80, qy + qw + 6 + szQ * 3.2f),
+                       brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        qf->Release();
+    }
+}
+
+// Compact overlay ON TOP of playing video (top-bar OVERLAY toggle): NEXT UP
+// strip along the top, phone-request QR bottom-left on a scrim. Kept to the
+// edges so karaoke lyrics (center/bottom) stay clear — and the operator can
+// toggle it off for lyric videos it still fights with. Audio-only tracks
+// never get here: with no video frame the full waiting screen draws instead.
+void VideoWindow::drawVideoOverlay() {
+    if (!dw_ &&
+        FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+                                   __uuidof(IDWriteFactory),
+                                   reinterpret_cast<IUnknown**>(&dw_))))
+        return;
+    ID2D1SolidColorBrush* brush = nullptr;
+    if (FAILED(rt_->CreateSolidColorBrush(D2D1::ColorF(0xE8ECF1), &brush))) return;
+    const D2D1_SIZE_F s = rt_->GetSize();
+    const float mg = s.height * 0.03f;
+    if (!scene_.nextUp.empty() && scene_.elems[IdleScene::kNextUp].on) {
+        const float sz = (std::max)(13.f, s.height * 0.028f);
+        const float stripH = sz * 1.9f;
+        IDWriteTextFormat* f = nullptr;
         if (SUCCEEDED(dw_->CreateTextFormat(
                 L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, szQ, L"",
-                &qf))) {
-            qf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            qf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-            brush->SetColor(D2D1::ColorF(0xE8ECF1));
-            const std::wstring& cap = scene_.qrCaption;
-            rt_->DrawTextW(cap.c_str(), UINT32(cap.size()), qf,
-                           D2D1::RectF(qx - 80, qy + qw + 6, qx + qw + 80,
-                                       qy + qw + 6 + szQ * 1.5f),
-                           brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
-            brush->SetColor(D2D1::ColorF(0x9BA3AD));
-            rt_->DrawTextW(qrUrl_.c_str(), UINT32(qrUrl_.size()), qf,
-                           D2D1::RectF(qx - 80, qy + qw + 6 + szQ * 1.6f,
-                                       qx + qw + 80, qy + qw + 6 + szQ * 3.2f),
-                           brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
-            qf->Release();
+                DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, sz, L"",
+                &f))) {
+            f->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            f->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            f->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            const D2D1_RECT_F strip =
+                D2D1::RectF(s.width * 0.18f, mg, s.width * 0.82f, mg + stripH);
+            brush->SetColor(D2D1::ColorF(0, 0.55f));
+            rt_->FillRoundedRectangle(D2D1::RoundedRect(strip, stripH / 2,
+                                                        stripH / 2),
+                                      brush);
+            brush->SetColor(D2D1::ColorF(0x4FC3F7));
+            rt_->DrawTextW(scene_.nextUp.c_str(), UINT32(scene_.nextUp.size()),
+                           f, strip, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            f->Release();
         }
+    }
+    if (qrSize_ > 0 && scene_.elems[IdleScene::kQr].on) {
+        const float cell = (std::max)(1.5f, s.height * 0.17f / float(qrSize_ + 8));
+        const float qw = cell * (qrSize_ + 8);
+        const float szQ = (std::max)(10.f, s.height * 0.014f);
+        const float capH = szQ * 3.4f;
+        const float qx = mg, qy = s.height - mg - qw - capH;
+        brush->SetColor(D2D1::ColorF(0, 0.45f)); // scrim keeps the url readable
+        rt_->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(qx - 10, qy - 10, qx + qw + 10,
+                                          qy + qw + capH + 6),
+                              10, 10),
+            brush);
+        drawQrCard(qx, qy, qw, szQ, brush);
     }
     brush->Release();
 }
@@ -416,6 +479,7 @@ void VideoWindow::draw(int baseSlot, int topSlot, float topAlpha) {
     if (!anyVideo) drawIdle();
     drawSlot(baseSlot, 1.f);
     drawSlot(topSlot, topAlpha);
+    if (anyVideo && overlay_) drawVideoOverlay();
     if (rt_->EndDraw() == D2DERR_RECREATE_TARGET) {
         releaseTarget();
         lost_ = true; // caller re-uploads its current frames

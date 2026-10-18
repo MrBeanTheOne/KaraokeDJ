@@ -42,9 +42,17 @@ void drawUi(App& a, Ui& ui, float W, float H) {
     if (a.webOn || !a.reqInbox.empty()) { // phone-request inbox badge
         wchar_t rl[32];
         swprintf(rl, 32, L"REQUESTS (%d)", int(a.reqInbox.size()));
-        if (ui.toggle(402, rc(W - 566, 44, 132, 30), rl, !a.reqInbox.empty(),
+        if (ui.toggle(402, rc(W - 666, 44, 132, 30), rl, !a.reqInbox.empty(),
                       cGreen))
             a.prompt = App::Prompt::Requests;
+    }
+    // NEXT UP + QR over playing video. Off for karaoke videos it covers;
+    // audio-only tracks always show the full waiting screen regardless.
+    if (ui.toggle(407, rc(W - 526, 44, 90, 30), L"OVERLAY", a.videoOverlayOn,
+                  cGreen)) {
+        a.videoOverlayOn = !a.videoOverlayOn;
+        a.status = a.videoOverlayOn ? L"overlay on video: NEXT UP + QR"
+                                    : L"overlay on video: off";
     }
     // Showtime: borderless over the taskbar, no title bar. The main loop
     // owns the HWND, so this only raises a request.
@@ -95,8 +103,8 @@ void drawUi(App& a, Ui& ui, float W, float H) {
         if (ui.in.pressed && hit(qdiv, ui.in.pressX, ui.in.pressY))
             a.resizingQueue = true;
         if (!ui.in.down) a.resizingQueue = false;
-        if (a.resizingQueue)
-            a.queueW = std::clamp(W - 16.f - ui.in.mx, 300.f,
+        if (a.resizingQueue) // min fits the header buttons (AUTOQUEUE..»)
+            a.queueW = std::clamp(W - 16.f - ui.in.mx, 340.f,
                                   (std::min)(560.f, W * 0.4f));
     }
     const float qw = a.queueOpen ? a.queueW : 30.f;

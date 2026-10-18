@@ -30,6 +30,10 @@ Settings) and points you at the download when one exists.
 ### 🎛️ Two decks, zero babysitting
 - Automix with configurable fade length, or mix by hand — crossfader fills
   blue (deck A) / red (deck B) from center.
+- **OVERLAY on music videos** (top bar): shows NEXT UP along the top and the
+  phone-request QR bottom-left over the playing video. Toggle it off when a
+  karaoke video's lyrics need the screen; audio-only tracks always show the
+  full waiting screen.
 - **AUTOQUEUE is the arm switch for the night** (queue drawer): until you
   press it, the queue is just a list you build — nothing auto-loads onto the
   decks and nothing starts by itself. Press it and the queue feeds both decks

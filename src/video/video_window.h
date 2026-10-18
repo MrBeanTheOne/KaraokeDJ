@@ -11,6 +11,7 @@ struct VideoFrame;
 struct ID2D1Factory;
 struct ID2D1HwndRenderTarget;
 struct ID2D1Bitmap;
+struct ID2D1SolidColorBrush;
 struct IDWriteFactory;
 
 // One waiting-screen element: anchored to a 3x3 grid cell (0..8 row-major,
@@ -73,6 +74,9 @@ public:
     bool hasBackground() const { return bg_ != nullptr; }
     // 0 = fit (letterbox), 1 = fill (crop), 2 = stretch.
     void setFitMode(int m) { fit_ = m; }
+    // Compact NEXT UP + QR overlay drawn over playing video (off by default;
+    // the waiting screen always shows the full scene regardless).
+    void setVideoOverlay(bool on) { overlay_ = on; }
     bool pump(); // process messages; false once closed or ESC pressed
     // True once after the render target was lost+recreated: re-setFrame slots.
     bool bitmapsLost() { const bool l = lost_; lost_ = false; return l; }
@@ -90,6 +94,9 @@ private:
 
     void setQr(const std::wstring& url); // regenerates only on change
     void drawIdle();
+    void drawQrCard(float qx, float qy, float qw, float szQ,
+                    ID2D1SolidColorBrush* brush);
+    void drawVideoOverlay();
 
     HWND hwnd_ = nullptr;
     ID2D1Factory* factory_ = nullptr;
@@ -106,6 +113,7 @@ private:
     std::vector<uint8_t> qrMods_; // qrSize_ x qrSize_ (1 = dark module)
     int qrSize_ = 0;
     int fit_ = 0; // 0 fit, 1 fill, 2 stretch
+    bool overlay_ = false; // NEXT UP + QR over playing video
     bool lost_ = false;
     bool quit_ = false;
     std::atomic<int> key_{0};
