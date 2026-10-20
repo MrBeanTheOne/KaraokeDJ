@@ -256,9 +256,13 @@ static std::string jesc(const std::string& s) {
     return o;
 }
 
-// First up private-network IPv4, preferring Wi-Fi/Ethernet over virtual
-// adapters (VPNs, VM bridges) so the printed URL is the one phones can reach.
-static std::string lanIp() {
+// All up private-network IPv4s, skipping loopback/tunnel adapters, in
+// auto-preference order. Dual-homed gig setup: ethernet to the request
+// router (TP-Link), Wi-Fi to the internet — ethernet first so the QR
+// defaults to the IP the phones can actually reach; a virtual adapter
+// (VPN, VM bridge) sorts last.
+std::vector<LanNet> RequestServer::networks() {
+    std::vector<LanNet> out;
     ULONG sz = 16 * 1024;
     std::vector<uint8_t> buf(sz);
     auto* aa = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
@@ -266,8 +270,8 @@ static std::string lanIp() {
                              GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                                  GAA_FLAG_SKIP_DNS_SERVER,
                              nullptr, aa, &sz) != NO_ERROR)
-        return "";
-    std::string best;
+        return out;
+    std::vector<int> rank;
     for (auto* ad = aa; ad; ad = ad->Next) {
         if (ad->OperStatus != IfOperStatusUp) continue;
         if (ad->IfType == IF_TYPE_SOFTWARE_LOOPBACK || ad->IfType == IF_TYPE_TUNNEL)
@@ -277,15 +281,23 @@ static std::string lanIp() {
             char ip[INET_ADDRSTRLEN]{};
             auto* sin = reinterpret_cast<sockaddr_in*>(ua->Address.lpSockaddr);
             inet_ntop(AF_INET, &sin->sin_addr, ip, sizeof(ip));
-            const bool priv = !strncmp(ip, "192.168.", 8) || !strncmp(ip, "10.", 3) ||
-                              !strncmp(ip, "172.", 4);
-            const bool real = ad->IfType == IF_TYPE_IEEE80211 ||
-                              ad->IfType == IF_TYPE_ETHERNET_CSMACD;
-            if (priv && real) return ip;
-            if (best.empty() && priv) best = ip;
+            if (strncmp(ip, "192.168.", 8) && strncmp(ip, "10.", 3) &&
+                strncmp(ip, "172.", 4))
+                continue;
+            out.push_back({ip, ad->FriendlyName ? ad->FriendlyName : L""});
+            rank.push_back(ad->IfType == IF_TYPE_ETHERNET_CSMACD ? 0
+                           : ad->IfType == IF_TYPE_IEEE80211     ? 1
+                                                                 : 2);
+            break; // one address per adapter is plenty
         }
     }
-    return best;
+    // ponytail: insertion sort, the list is 2-3 adapters
+    for (size_t i = 1; i < out.size(); ++i)
+        for (size_t j = i; j > 0 && rank[j] < rank[j - 1]; --j) {
+            std::swap(rank[j], rank[j - 1]);
+            std::swap(out[j], out[j - 1]);
+        }
+    return out;
 }
 
 // -------------------------------------------------------------------- server
@@ -498,11 +510,24 @@ std::wstring RequestServer::url() const {
     const unsigned long long now = GetTickCount64();
     if (urlAt_ && now - urlAt_ < 10000) return urlCache_;
     urlAt_ = now;
-    const std::string ip = lanIp();
+    const auto nets = networks();
+    std::string ip;
+    if (!prefIp_.empty()) // pinned network — only if it's still connected
+        for (const auto& n : nets)
+            if (n.ip == prefIp_) {
+                ip = n.ip;
+                break;
+            }
+    if (ip.empty() && !nets.empty()) ip = nets.front().ip;
     urlCache_ = ip.empty() ? L""
                            : L"http://" + wide(ip) + L":" +
                                  std::to_wstring(port_) + L"/";
     return urlCache_;
+}
+
+void RequestServer::setPreferredIp(const std::string& ip) {
+    prefIp_ = ip;
+    urlAt_ = 0; // recompute the URL (and QR) right away
 }
 
 void RequestServer::setPassword(const std::wstring& pass) {

@@ -17,6 +17,12 @@ struct PhoneRequest {
     Match song; // full row snapshot — approving needs no lookup
 };
 
+// One connected private-IPv4 network the URL/QR could advertise.
+struct LanNet {
+    std::string ip;    // dotted quad, utf8/ascii
+    std::wstring name; // adapter friendly name ("Ethernet", "Wi-Fi", …)
+};
+
 // Optional embedded LAN web server (settings toggle, off by default):
 // singers on the venue Wi-Fi open one mobile page, search the library and
 // request songs. Fully isolated from the playback path — it runs on its own
@@ -34,6 +40,11 @@ public:
     void setLanguage(int lang) { lang_.store(lang); }
     bool running() const { return running_.load(); }
     std::wstring url() const; // http://<lan-ip>:<port>/  ("" if not running)
+    // Up private-IPv4 networks, auto-preference order (ethernet, Wi-Fi, rest).
+    static std::vector<LanNet> networks();
+    // Pin the advertised IP ("" = auto). Display/QR only — the server always
+    // listens on every adapter. Main thread, like url().
+    void setPreferredIp(const std::string& ip);
 
     bool hasPending() const { return pending_.load(); }
     std::vector<PhoneRequest> take(); // drain the inbox (main loop)
@@ -59,4 +70,5 @@ private:
     // tick. Main-thread only.
     mutable std::wstring urlCache_;
     mutable unsigned long long urlAt_ = 0;
+    std::string prefIp_; // pinned advertised IP, "" = auto. Main thread.
 };

@@ -175,6 +175,9 @@ Settings) and points you at the download when one exists.
   "karaoke" in the name) — music videos stay yours.
 - Optional **password**: phones enter it once and remember it; change it
   mid-night and everyone is asked again.
+- **Network picker**: on a laptop with two connections (a dedicated request
+  router by ethernet + venue Wi-Fi for internet), choose which network the
+  URL and QR advertise — AUTO prefers ethernet.
 - Strictly isolated: when off, no server, thread, or port exists. Only song
   metadata is ever served.
 

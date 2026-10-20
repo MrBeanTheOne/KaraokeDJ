@@ -311,6 +311,39 @@ void drawSettings(App& a, Ui& ui, const D2D1_RECT_F& r) {
             cachedUrl = a.web.url();
             urlAt = GetTickCount64();
         }
+        { // which network the URL/QR advertises — a dual-homed laptop
+          // (ethernet to the request router, Wi-Fi to the internet) has two
+            ui.text(rc(x, y, 190, 26), L"Network", 12, cText, 0, false);
+            const auto nets = RequestServer::networks();
+            std::wstring lbl = L"AUTO";
+            if (!a.webIp.empty()) {
+                lbl = wide(a.webIp) + L" (not connected)";
+                for (const auto& n : nets)
+                    if (n.ip == a.webIp) {
+                        lbl = n.name + L" — " + wide(n.ip);
+                        break;
+                    }
+            } else if (!nets.empty()) {
+                lbl = L"AUTO — " + nets.front().name;
+            }
+            if (ui.button(621, rc(x + 200, y, 300, 26), lbl, cAccent)) {
+                size_t next = 0; // AUTO cycles to the first network
+                for (size_t i = 0; i < nets.size(); ++i)
+                    if (nets[i].ip == a.webIp) {
+                        next = i + 1;
+                        break;
+                    }
+                a.webIp = next < nets.size() ? nets[next].ip : "";
+                a.web.setPreferredIp(a.webIp);
+                setSetting(a.db, "web_ip", a.webIp);
+                cachedUrl = a.web.url(); // show the switch this frame
+                urlAt = GetTickCount64();
+            }
+            ui.text(rc(x + 510, y, w - 510, 26),
+                    L"click to cycle — pick the router the phones are on", 10,
+                    cDim, 0, false);
+            y += 34;
+        }
         ui.text(rc(x, y, w, 18),
                 cachedUrl.empty()
                     ? L"No network found — join Wi-Fi or start a mobile hotspot"

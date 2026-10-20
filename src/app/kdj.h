@@ -409,6 +409,7 @@ struct App {
     RequestServer web;
     bool webOn = false;
     std::wstring webPass;      // optional page password (web_pass)
+    std::string webIp;         // pinned URL/QR network, "" = auto (web_ip)
     std::vector<PhoneRequest> reqInbox; // pending, shown in the REQUESTS modal
 
     // Update check: GitHub latest release vs this build (silent at startup,

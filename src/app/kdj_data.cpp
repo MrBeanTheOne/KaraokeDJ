@@ -99,6 +99,7 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.ytDir = wide(getSetting(a.db, "yt_dir", "")); // empty = the %APPDATA% cache
     a.webOn = getSetting(a.db, "web_on", "0") == "1"; // strictly opt-in
     a.webPass = wide(getSetting(a.db, "web_pass", ""));
+    a.webIp = getSetting(a.db, "web_ip", ""); // "" = auto-pick network
     a.idleSub = wide(getSetting(a.db, "idle_sub", ""));
     a.idleLogoPath = wide(getSetting(a.db, "idle_logo", ""));
     if (!a.idleLogoPath.empty()) {
@@ -184,6 +185,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "watch_folders", a.watchOn ? "1" : "0");
     setSetting(a.db, "web_on", a.webOn ? "1" : "0");
     setSetting(a.db, "web_pass", utf8(a.webPass));
+    setSetting(a.db, "web_ip", a.webIp);
     setSetting(a.db, "idle_sub", utf8(a.idleSub));
     setSetting(a.db, "idle_logo", utf8(a.idleLogoPath));
     setSetting(a.db, "idle_bg", utf8(a.idleBgPath));
