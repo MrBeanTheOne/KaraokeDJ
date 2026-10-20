@@ -92,7 +92,8 @@ void loadSettings(App& a, UINT& winW, UINT& winH) {
     a.scanTags = getSetting(a.db, "scan_tags", "1") == "1";
     a.autoGainOn = getSetting(a.db, "auto_gain", "1") == "1";
     a.hotkeysOn = getSetting(a.db, "hotkeys", "1") == "1";
-    a.webFmt = std::clamp(atoi(getSetting(a.db, "web_fmt", "0").c_str()), 0, 3);
+    // web_fmt2: indices reordered when MP4 1080p landed (old web_fmt retired)
+    a.webFmt = std::clamp(atoi(getSetting(a.db, "web_fmt2", "2").c_str()), 0, 4);
     a.lang = getSetting(a.db, "lang", "0") == "1" ? 1 : 0;
     uiSetLanguage(a.lang);
     a.watchOn = getSetting(a.db, "watch_folders", "0") == "1";
@@ -180,7 +181,7 @@ void saveSettings(App& a, UINT winW, UINT winH) {
     setSetting(a.db, "scan_tags", a.scanTags ? "1" : "0");
     setSetting(a.db, "auto_gain", a.autoGainOn ? "1" : "0");
     setSetting(a.db, "hotkeys", a.hotkeysOn ? "1" : "0");
-    setSetting(a.db, "web_fmt", std::to_string(a.webFmt));
+    setSetting(a.db, "web_fmt2", std::to_string(a.webFmt));
     setSetting(a.db, "lang", a.lang ? "1" : "0");
     setSetting(a.db, "watch_folders", a.watchOn ? "1" : "0");
     setSetting(a.db, "web_on", a.webOn ? "1" : "0");

@@ -589,9 +589,10 @@ void handleMenu(App& a, HWND hwnd) {
         const int eff = h.fmt >= 0 ? h.fmt : a.webFmt;
         const int sel = showMenu(hwnd, a.uiScale, req.x, req.y,
                                  {kWebFmtNames[0], kWebFmtNames[1],
-                                  kWebFmtNames[2], kWebFmtNames[3]},
+                                  kWebFmtNames[2], kWebFmtNames[3],
+                                  kWebFmtNames[4]},
                                  eff);
-        if (sel >= 0 && sel < 4) h.fmt = sel;
+        if (sel >= 0 && sel < 5) h.fmt = sel;
     } else if (req.kind == MenuReq::CleanMissing) {
         cleanMissingFiles(a);
     } else if (req.kind == MenuReq::PlaylistRow && req.plId >= 0) {

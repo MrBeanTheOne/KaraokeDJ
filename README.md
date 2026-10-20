@@ -48,7 +48,7 @@ Settings) and points you at the download when one exists.
 - Plays **MP3+G** (mp3/cdg pairs), **karaoke ZIPs**, **video files**, plain
   audio — and YouTube, via the built-in **WEB section**: search YouTube from
   the sidebar with **thumbnails**, tick videos and GET them in one go, pick
-  MP4 720p / MP4 best / MP3 / WAV per video from a dropdown, watch live
+  MP4 best / MP4 1080p / MP4 720p / MP3 / WAV per video from a dropdown, watch live
   download progress, and files import into the library by themselves
   (already-downloaded videos are badged and skipped). Pasted links land in
   the same download strip.

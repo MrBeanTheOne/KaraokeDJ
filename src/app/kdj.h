@@ -443,7 +443,7 @@ struct App {
     // results land in the yt folder and import themselves. One download at a
     // time (venue bandwidth), progress visible per item in the view.
     std::vector<WebHit> webHits; // UI thread: last adopted results
-    int webFmt = 0;              // 0 MP4 720p, 1 MP4 best, 2 MP3, 3 WAV
+    int webFmt = 2;              // 0 MP4 best, 1 1080p, 2 720p, 3 MP3, 4 WAV
     int webTab = 0;              // sidebar WEB section: 0 search, 1 downloads
     std::mutex webMx;            // guards webFound/webErr/webDls
     std::vector<WebHit> webFound;
@@ -632,7 +632,7 @@ void webEnqueue(App& a, const std::wstring& target, const std::wstring& title,
                 int fmt = -1); // -1 = the view's global format choice
 void webPoll(App& a);
 void stopWebWorkers(App& a);
-extern const wchar_t* kWebFmtNames[4]; // MP4 720p / MP4 best / MP3 / WAV
+extern const wchar_t* kWebFmtNames[5]; // MP4 best/1080p/720p, MP3, WAV
 
 void scrollbar(App& a, Ui& ui, int id, const D2D1_RECT_F& list, size_t count,
                float rowH, float& scroll);

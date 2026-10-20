@@ -29,10 +29,12 @@ std::wstring youtubeCacheDir(const std::wstring& custom) {
 // imported. Replaces the old paste-a-URL one-shot that gave no feedback and
 // looked like a frozen search box.
 
-const wchar_t* kWebFmtNames[4] = {L"MP4 720p", L"MP4 BEST", L"MP3", L"WAV"};
-static const wchar_t* kWebFmtArgs[4] = {
-    L"-f \"bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b\" --remux-video mp4",
+const wchar_t* kWebFmtNames[5] = {L"MP4 BEST", L"MP4 1080p", L"MP4 720p",
+                                  L"MP3", L"WAV"};
+static const wchar_t* kWebFmtArgs[5] = {
     L"-f \"bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b\" --remux-video mp4",
+    L"-f \"bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b\" --remux-video mp4",
+    L"-f \"bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b\" --remux-video mp4",
     L"-f \"ba/b\" -x --audio-format mp3 --audio-quality 0",
     L"-f \"ba/b\" -x --audio-format wav",
 };
@@ -232,7 +234,7 @@ static void webDlWorker(App& a) {
                 : L"https://www.youtube.com/watch?v=" + target;
         const std::wstring cmd =
             L"yt-dlp.exe --no-playlist --encoding utf-8 --newline " +
-            std::wstring(kWebFmtArgs[std::clamp(fmt, 0, 3)]) +
+            std::wstring(kWebFmtArgs[std::clamp(fmt, 0, 4)]) +
             L" --no-simulate --print after_move:filepath "
             L"-o \"" + dir + L"\\%(title)s [%(id)s].%(ext)s\" \"" + url + L"\"";
 
